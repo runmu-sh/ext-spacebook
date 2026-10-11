@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spacebook.List",
+  "$comment": "The whole Spacebook, sent on login, on Core.Supports, every 30 s when changed, and after every mutation.",
+  "type": "object",
+  "required": ["self", "pending", "buddies"],
+  "properties": {
+    "self": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "blurb": { "type": "string" },
+        "public": { "type": "boolean" },
+        "portrait": { "type": "string" }
+      }
+    },
+    "pending": { "type": "array", "items": { "$ref": "#/$defs/record" } },
+    "buddies": { "type": "array", "items": { "$ref": "#/$defs/record" } }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "required": ["key", "name"],
+      "properties": {
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "acquaintance": { "type": "string" },
+        "location": { "type": "string" },
+        "blurb": { "type": "string" },
+        "portrait": { "type": "string" }
+      }
+    }
+  }
+}

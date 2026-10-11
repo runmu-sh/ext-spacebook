@@ -1,0 +1,118 @@
+{
+  "name": "@runmu.sh/ext-spacebook",
+  "version": "1.0.0",
+  "description": "The Spacebook panel for Torchship: your buddies and their status, location, acquaintance and blurb, pending buddy requests, and your own profile, from GMCP Spacebook.List.",
+  "keywords": [
+    "spacebook",
+    "torchship",
+    "buddies",
+    "social",
+    "gmcp",
+    "panel"
+  ],
+  "license": "MIT",
+  "homepage": "https://runmu.sh/marketplace/x/spacebook",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runmu-sh/ext-spacebook.git"
+  },
+  "bugs": {
+    "url": "https://github.com/runmu-sh/ext-spacebook/issues"
+  },
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./src/types.ts",
+  "files": [
+    "dist",
+    "schema",
+    "src/types.ts",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "node scripts/build.mjs --check",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@muclient/sdk": "npm:@runmu.sh/sdk@^1.16.0",
+    "@runmu.sh/dev": "^0.5.0",
+    "esbuild": "^0.28.2",
+    "happy-dom": "^20.0.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "muclient": {
+    "id": "spacebook",
+    "api": "^1.14",
+    "source": "src/index.ts",
+    "displayName": "Spacebook",
+    "description": "The Spacebook panel for Torchship: your buddies with their status, location, acquaintance and blurb, pending buddy requests, and your own profile, from GMCP Spacebook.List.",
+    "categories": [
+      "communication",
+      "interface"
+    ],
+    "activation": [
+      "onGmcp:Spacebook"
+    ],
+    "contributes": {
+      "panels": [
+        {
+          "id": "spacebook",
+          "title": "Spacebook",
+          "order": 40,
+          "defaultPosition": "right-bottom",
+          "singleton": true
+        }
+      ],
+      "gmcp": [
+        {
+          "package": "Spacebook 1",
+          "messages": {
+            "Spacebook.List": {
+              "dir": "in",
+              "schema": "schema/list.json"
+            },
+            "Spacebook.Get": {
+              "dir": "out",
+              "schema": "schema/empty.json"
+            },
+            "Spacebook.Accept": {
+              "dir": "out",
+              "schema": "schema/key.json"
+            },
+            "Spacebook.Add": {
+              "dir": "out",
+              "schema": "schema/add.json"
+            },
+            "Spacebook.Remove": {
+              "dir": "out",
+              "schema": "schema/key.json"
+            },
+            "Spacebook.SetBlurb": {
+              "dir": "out",
+              "schema": "schema/blurb.json"
+            },
+            "Spacebook.SetPublic": {
+              "dir": "out",
+              "schema": "schema/public.json"
+            }
+          }
+        }
+      ],
+      "storage": {
+        "world": [
+          "seen.pending"
+        ]
+      }
+    },
+    "capabilities": [
+      "send-commands"
+    ],
+    "publisher": "bitmuse"
+  }
+}

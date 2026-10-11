@@ -1,0 +1,1 @@
+{ "$comment": "Spacebook.SetBlurb: your blurb, under 50 characters.", "type": "object", "required": ["blurb"], "properties": { "blurb": { "type": "string" } } }

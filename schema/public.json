@@ -1,0 +1,1 @@
+{ "$comment": "Spacebook.SetPublic: whether your profile is public.", "type": "object", "required": ["public"], "properties": { "public": { "type": "boolean" } } }

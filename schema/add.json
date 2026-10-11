@@ -1,0 +1,1 @@
+{ "$comment": "Spacebook.Add: a buddy request, by key or by name.", "type": "object", "properties": { "key": { "type": "string" }, "name": { "type": "string" } } }

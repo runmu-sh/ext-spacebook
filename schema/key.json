@@ -1,0 +1,1 @@
+{ "$comment": "Spacebook.Accept / Spacebook.Remove: one record by its key.", "type": "object", "required": ["key"], "properties": { "key": { "type": "string" } } }

@@ -28,6 +28,25 @@ export const COPY = {
   goPrivate: 'Go private',
   goPublic: 'Go public',
   searchProfiles: 'Search profiles',
+  friendsShared: 'Friends shared',
+  friendsHidden: 'Friends hidden',
+  hideFriends: 'Hide friends',
+  shareFriends: 'Share friends',
+  // profile and search views
+  back: 'Back',
+  openProfile: 'Open profile',
+  loading: 'Loading',
+  friends: 'Friends',
+  introduces: 'Can introduce you to',
+  noFriends: 'No friends to show',
+  noIntroductions: 'Nobody they could introduce you to',
+  results: 'Results',
+  noResults: 'No public profiles match',
+  addBuddy: 'Add buddy',
+  isBuddy: 'Buddy',
+  isYou: 'You',
+  privateProfile: 'Private profile',
+  searchHead: (term: string) => `Search: ${term}`,
   // prompts
   addTitle: 'Add a buddy',
   addLabel: 'Their name',
@@ -36,13 +55,14 @@ export const COPY = {
   blurbLabel: (max: number) => `Up to ${max} characters`,
   blurbTooLong: (max: number) => `at most ${max} characters`,
   searchTitle: 'Search profiles',
-  searchLabel: 'A word from a name, blurb or location',
+  searchLabel: 'A word from a name, line of work or blurb',
   removeTitle: (name: string) => `Remove ${name}?`,
   removeBody: 'They are told nothing; they can ask again.',
   removeConfirm: 'Remove',
   // context menu
   buddyKind: 'Buddy',
   page: 'Page',
+  viewProfile: 'View profile',
   remove: 'Remove buddy',
   // notifications
   requestTitle: 'Spacebook',
@@ -52,7 +72,6 @@ export const COPY = {
   settingOnline: 'Show buddies who are online',
   settingOffline: 'Show buddies who are offline',
   settingOfflineHint: 'Deceased and unknown count as offline.',
-  // commands sent as text (the server has no GMCP search)
-  cmdSearch: (term: string) => `sbsearch ${term}`,
+  // commands sent as text
   cmdPage: (name: string) => `page ${name} `,
 };

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spacebook.Profile",
+  "$comment": "The answer to Spacebook.GetProfile: someone's card with their friends (for an NPC, the people it could introduce you to), or {key, name, error} when they cannot be found or the profile is private.",
+  "type": "object",
+  "required": [
+    "key",
+    "name"
+  ],
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "portrait": {
+      "type": "string"
+    },
+    "acquaintance": {
+      "type": "string"
+    },
+    "blurb": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "buddy": {
+      "type": "boolean"
+    },
+    "viewable": {
+      "type": "boolean",
+      "$comment": "The viewer may ask for this profile."
+    },
+    "error": {
+      "type": "string",
+      "$comment": "Set instead of the rest when they cannot be found or the profile is private."
+    },
+    "shares_friends": {
+      "type": "boolean"
+    },
+    "friends_visible": {
+      "type": "boolean"
+    },
+    "friends_hidden": {
+      "type": "string",
+      "$comment": "Why the friends are not shown; '' when they are."
+    },
+    "friends": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/card"
+      }
+    },
+    "introducer": {
+      "type": "boolean",
+      "$comment": "An NPC: its friends are the people it could introduce you to."
+    }
+  },
+  "$defs": {
+    "card": {
+      "type": "object",
+      "required": [
+        "key",
+        "name"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "portrait": {
+          "type": "string"
+        },
+        "acquaintance": {
+          "type": "string"
+        },
+        "blurb": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "buddy": {
+          "type": "boolean"
+        },
+        "viewable": {
+          "type": "boolean",
+          "$comment": "The viewer may ask for this profile."
+        }
+      }
+    }
+  }
+}

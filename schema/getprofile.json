@@ -1,0 +1,1 @@
+{ "$comment": "Spacebook.GetProfile: someone by key, or by name (\"me\", a buddy, a buddy's friend or a public profile).", "type": "object", "properties": { "key": { "type": "string" }, "name": { "type": "string" } } }

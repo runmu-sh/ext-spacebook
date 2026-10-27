@@ -1,7 +1,7 @@
 {
   "name": "@runmu.sh/ext-spacebook",
-  "version": "1.0.0",
-  "description": "The Spacebook panel for Torchship: your buddies and their status, location, acquaintance and blurb, pending buddy requests, and your own profile, from GMCP Spacebook.List.",
+  "version": "1.1.0",
+  "description": "The Spacebook panel for Torchship: your buddies and their status, location, acquaintance and blurb, pending buddy requests, your own profile, profile search, and who your buddies (and the denizens you know) can introduce you to, from GMCP Spacebook.",
   "keywords": [
     "spacebook",
     "torchship",
@@ -51,7 +51,7 @@
     "api": "^1.14",
     "source": "src/index.ts",
     "displayName": "Spacebook",
-    "description": "The Spacebook panel for Torchship: your buddies with their status, location, acquaintance and blurb, pending buddy requests, and your own profile, from GMCP Spacebook.List.",
+    "description": "The Spacebook panel for Torchship: your buddies and their status, location, acquaintance and blurb, pending buddy requests, your own profile, profile search, and who your buddies (and the denizens you know) can introduce you to, from GMCP Spacebook.",
     "categories": [
       "communication",
       "interface"
@@ -100,6 +100,26 @@
             "Spacebook.SetPublic": {
               "dir": "out",
               "schema": "schema/public.json"
+            },
+            "Spacebook.GetProfile": {
+              "dir": "out",
+              "schema": "schema/getprofile.json"
+            },
+            "Spacebook.Profile": {
+              "dir": "in",
+              "schema": "schema/profile.json"
+            },
+            "Spacebook.Search": {
+              "dir": "out",
+              "schema": "schema/search.json"
+            },
+            "Spacebook.Results": {
+              "dir": "in",
+              "schema": "schema/results.json"
+            },
+            "Spacebook.SetShareFriends": {
+              "dir": "out",
+              "schema": "schema/share.json"
             }
           }
         }

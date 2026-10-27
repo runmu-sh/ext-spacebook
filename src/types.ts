@@ -18,6 +18,10 @@ export interface SpacebookRecord {
   blurb: string;
   /** `"placeholder"` (initials are drawn) or an image URL. */
   portrait: string;
+  /** Their line of work ("fence", "librarian"); '' for most players. */
+  role: string;
+  /** Whether they let their buddies see who they are friends with. */
+  shares_friends: boolean;
 }
 
 /** `self` in `Spacebook.List`. */
@@ -25,8 +29,46 @@ export interface SpacebookSelf {
   name: string;
   blurb: string;
   public: boolean;
+  /** Whether your buddies can see your friends (on unless you turned it off). */
+  share_friends: boolean;
   portrait: string;
 }
+
+/**
+ * Someone as the server lets the viewer see them: a friend in a profile, a search result, the head of a profile.
+ * `blurb` is '' unless `viewable`; `location` is '' unless `buddy`.
+ */
+export interface SpacebookCard {
+  key: string;
+  name: string;
+  role: string;
+  status: SpacebookStatus;
+  portrait: string;
+  acquaintance: string;
+  /** One of the viewer's buddies. */
+  buddy: boolean;
+  /** The viewer may open their profile (`Spacebook.GetProfile`): public, a buddy, or the viewer. */
+  viewable: boolean;
+  blurb: string;
+  location: string;
+}
+
+/** `Spacebook.Profile`, the answer to `Spacebook.GetProfile`. */
+export interface SpacebookProfile extends SpacebookCard {
+  shares_friends: boolean;
+  /** Why the friends are not shown ('' when they are): not a buddy, or they keep them to themselves. */
+  friends_hidden: string;
+  friends_visible: boolean;
+  /** Who they are friends with; for an NPC (`introducer`) only the people it could introduce the viewer to. */
+  friends: SpacebookCard[];
+  introducer: boolean;
+}
+
+/** `Spacebook.Profile` when the person cannot be found or their profile is private. */
+export interface SpacebookProfileError { key: string; name: string; error: string }
+
+/** `Spacebook.Results`, the answer to `Spacebook.Search`: public profiles matching the term. */
+export interface SpacebookResults { term: string; results: SpacebookCard[] }
 
 /** A normalised `Spacebook.List`. */
 export interface SpacebookList {
@@ -34,6 +76,12 @@ export interface SpacebookList {
   pending: SpacebookRecord[];
   buddies: SpacebookRecord[];
 }
+
+/** What the panel shows: your book, someone's profile (null while it loads), or search results (null while they load). */
+export type SpacebookView =
+  | { kind: 'book' }
+  | { kind: 'profile'; key: string; name: string; profile: SpacebookProfile | SpacebookProfileError | null }
+  | { kind: 'search'; term: string; results: SpacebookCard[] | null };
 
 /** The `data` of the context kind `spacebook.buddy` (right-click or ▸ on a buddy row). */
 export interface SpacebookBuddyData { buddy: SpacebookRecord }
@@ -48,6 +96,8 @@ export interface SpacebookApi {
   list(sid?: string): SpacebookList | null;
   /** Ask the server to send the list again (`Spacebook.Get`). */
   refresh(sid?: string): Promise<boolean>;
+  /** Open someone's profile in the panel (`Spacebook.GetProfile` by key, or by name). @since 1.1.0 */
+  openProfile(who: { key?: string; name?: string }, sid?: string): void;
 }
 
 /** The ONLINE / OFFLINE filter settings (`ext.spacebook.<key>`, per world). */

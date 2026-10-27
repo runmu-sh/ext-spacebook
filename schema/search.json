@@ -1,0 +1,1 @@
+{ "$comment": "Spacebook.Search: a word from a name, line of work or blurb.", "type": "object", "required": ["term"], "properties": { "term": { "type": "string" } } }

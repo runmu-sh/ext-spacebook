@@ -43,6 +43,16 @@ const LIST = {
   ],
 };
 
+const card = (key, name, o = {}) => ({ key, name, role: '', status: 'offline', portrait: 'placeholder', acquaintance: 'unknown', buddy: false, viewable: false, blurb: '', location: '', ...o });
+/** As the server sends them (shapes captured from Torchship's $spacebook_fo:profile and :search). */
+const PROFILE = {
+  ...card('b1', 'Yulia Kozlov', { status: 'online', acquaintance: 'close friend', buddy: true, viewable: true, blurb: 'Night shift.', location: 'Cube 3148' }),
+  shares_friends: true, friends_hidden: '', friends_visible: true, introducer: false,
+  friends: [card('f1', 'Kaori Nagao', { role: 'librarian', status: 'online', viewable: true, blurb: 'Quiet, please.' }), card('f2', 'Duke', { acquaintance: 'rival' })],
+};
+const NPC = { ...card('n1', 'Kaori Nagao', { role: 'librarian', status: 'online', viewable: true }), shares_friends: false, friends_hidden: 'Kaori Nagao keeps their friends to themselves.', friends_visible: false, friends: [], introducer: true };
+const RESULTS = { term: 'gupta', results: [card('r1', 'Nylys Gupta', { viewable: true, blurb: "I make stuff and get it where it's needed." })] };
+
 function fake(host, { legacy = false, owner = true } = {}) {
   const kinds = new Map(), targets = [], touches = [], badges = [], mentions = [], contexts = [], fills = [], prompts = [];
   if (legacy) host.mu.menus.kind = undefined;
@@ -89,7 +99,7 @@ test('registration: panel right-bottom, order 40, singleton, show auto; the mani
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
   assert.deepEqual(pkg.muclient.contributes.panels, [{ id: 'spacebook', title: 'Spacebook', order: 40, defaultPosition: 'right-bottom', singleton: true }]);
   assert.equal(pkg.muclient.contributes.gmcp[0].package, 'Spacebook 1');
-  assert.deepEqual(Object.keys(pkg.muclient.contributes.gmcp[0].messages), ['Spacebook.List', 'Spacebook.Get', 'Spacebook.Accept', 'Spacebook.Add', 'Spacebook.Remove', 'Spacebook.SetBlurb', 'Spacebook.SetPublic']);
+  assert.deepEqual(Object.keys(pkg.muclient.contributes.gmcp[0].messages), ['Spacebook.List', 'Spacebook.Get', 'Spacebook.Accept', 'Spacebook.Add', 'Spacebook.Remove', 'Spacebook.SetBlurb', 'Spacebook.SetPublic', 'Spacebook.GetProfile', 'Spacebook.Profile', 'Spacebook.Search', 'Spacebook.Results', 'Spacebook.SetShareFriends']);
   assert.deepEqual(pkg.muclient.activation, ['onGmcp:Spacebook']);
   assert.deepEqual(pkg.muclient.capabilities, ['send-commands']);
   assert.deepEqual(host.settingsSchema.items.map((i) => [i.key, i.default, i.scope, i.kind]), [['filter.online', true, 'world', 'toggle'], ['filter.offline', true, 'world', 'toggle']]);
@@ -112,6 +122,16 @@ test('payload schemas: schema/list.json accepts the server list and refuses a no
   assert.equal(validate(schema('blurb.json'), { blurb: 'hi' }), null);
   assert.equal(validate(schema('public.json'), { public: false }), null);
   assert.equal(validate(schema('empty.json'), {}), null);
+  assert.equal(validate(schema('getprofile.json'), { key: 'k' }), null);
+  assert.equal(validate(schema('getprofile.json'), { name: 'me' }), null);
+  assert.equal(validate(schema('search.json'), { term: 'medic' }), null);
+  assert.equal(validate(schema('share.json'), { share: true }), null);
+  assert.match(validate(schema('share.json'), {}), /share/);
+  assert.equal(validate(schema('profile.json'), PROFILE), null);
+  assert.equal(validate(schema('profile.json'), NPC), null);
+  assert.equal(validate(schema('profile.json'), { key: 'garbage', name: '', error: "That person isn't on Spacebook." }), null);
+  assert.equal(validate(schema('results.json'), RESULTS), null);
+  assert.match(validate(schema('results.json'), { term: 'x', results: [{ name: 'no key' }] }), /key/);
 });
 
 test('empty: WAITING FOR SPACEBOOK before a list, no foot, no touch; a panel without a session too', async () => {
@@ -238,7 +258,7 @@ test('search: name, blurb, location and acquaintance, case-insensitive; the fiel
   await host.unload();
 });
 
-test('actions: ACCEPT, ADD, EDIT BLURB (prefilled, validated and clamped at 49, unchanged or cancelled not sent), GO PRIVATE, SEARCH PROFILES as the sbsearch command', async () => {
+test('actions: ACCEPT, ADD, EDIT BLURB (prefilled, validated and clamped at 49, unchanged or cancelled not sent), GO PRIVATE, HIDE FRIENDS, SEARCH PROFILES as Spacebook.Search', async () => {
   const { host, mount, prompts } = await setup();
   const p = mount();
   host.gmcp('s1', 'Spacebook.List', LIST);
@@ -271,10 +291,14 @@ test('actions: ACCEPT, ADD, EDIT BLURB (prefilled, validated and clamped at 49, 
   assert.deepEqual(host.sends('command'), []);
   p.q('[data-testid=sb-public-toggle]').click();
   assert.deepEqual(gm().at(-1), ['Spacebook.SetPublic', { public: false }]);
+  assert.equal(p.q('[data-testid=sb-share-toggle]').textContent, 'Hide friends', 'sharing is on unless the list says otherwise');
+  p.q('[data-testid=sb-share-toggle]').click();
+  assert.deepEqual(gm().at(-1), ['Spacebook.SetShareFriends', { share: false }]);
   host.promptAnswer = ' medic ';
   p.q('[data-testid=sb-search-profiles]').click();
   await tick();
-  assert.deepEqual(host.sends('command'), [{ kind: 'command', sid: 's1', text: 'sbsearch medic' }]);
+  assert.deepEqual(gm().at(-1), ['Spacebook.Search', { term: 'medic' }]);
+  assert.deepEqual(host.sends('command'), [], 'no text commands');
   assert.ok(host.sends('gmcp').every((s) => s.sid === 's1'));
   assert.equal(host.errors.length, 0);
   p.off();
@@ -295,10 +319,10 @@ test('context menu: the kind spacebook.buddy with a schema the rows pass; Page f
     assert.equal(validate(kinds.get(t.kind).schema, t.data), null);
   }
   assert.match(validate(kinds.get('spacebook.buddy').schema, { buddy: { name: 'x' } }), /key/);
-  assert.deepEqual(contexts.map((c) => [c.id, c.target, c.title]), [['page', 'spacebook.buddy', 'Page'], ['remove', 'spacebook.buddy', 'Remove buddy']]);
+  assert.deepEqual(contexts.map((c) => [c.id, c.target, c.title]), [['page', 'spacebook.buddy', 'Page'], ['profile', 'spacebook.buddy', 'View profile'], ['remove', 'spacebook.buddy', 'Remove buddy']]);
   const ray = live().find((t) => t.t.data.buddy.name === 'Radical Ray').t;
   const pol = live().find((t) => t.t.data.buddy.name === 'Pol Castro').t;
-  const [page, remove] = contexts;
+  const [page, , remove] = contexts;
   assert.equal(page.when(ray), true);
   assert.equal(page.when(pol), false, 'no paging the dead');
   assert.equal(remove.when(pol), true);
@@ -401,9 +425,9 @@ test('exports: listOf normalises, initialsOf, sortBuddies, filterBuddies, clampB
   assert.equal(listOf('x'), null);
   assert.equal(listOf([1]), null);
   const l = listOf({ self: { name: ' N ' }, pending: 'nope', buddies: [{ key: 1, name: 'A', status: 'ONLINE' }, { name: 'no key' }, { key: 'k', name: '' }] });
-  assert.deepEqual(l.self, { name: 'N', blurb: '', public: false, portrait: 'placeholder' });
+  assert.deepEqual(l.self, { name: 'N', blurb: '', public: false, share_friends: true, portrait: 'placeholder' });
   assert.deepEqual(l.pending, []);
-  assert.deepEqual(l.buddies, [{ key: '1', name: 'A', status: 'online', acquaintance: '', location: '', blurb: '', portrait: 'placeholder' }]);
+  assert.deepEqual(l.buddies, [{ key: '1', name: 'A', status: 'online', acquaintance: '', location: '', blurb: '', portrait: 'placeholder', role: '', shares_friends: true }]);
   assert.deepEqual(['Radical Ray', "Ol' Red", 'Cher', '  x  y z', '', '-'].map(initialsOf), ['RR', 'OR', 'C', 'XY', '?', '-']);
   const b = (n, s) => ({ key: n, name: n, status: s, acquaintance: '', location: '', blurb: '', portrait: 'placeholder' });
   assert.deepEqual(sortBuddies([b('b', 'offline'), b('c', 'online'), b('A', 'online'), b('a2', 'deceased')]).map((x) => x.name), ['A', 'c', 'a2', 'b']);
@@ -412,7 +436,6 @@ test('exports: listOf normalises, initialsOf, sortBuddies, filterBuddies, clampB
   assert.equal(clampBlurb('  ' + 'é'.repeat(60)), 'é'.repeat(49));
   assert.equal(isHostile(' Hated Enemy '), true);
   assert.equal(isHostile('friend'), false);
-  assert.equal(COPY.cmdSearch('a b'), 'sbsearch a b');
   assert.equal(COPY.cmdPage('Ray'), 'page Ray ');
 });
 
@@ -439,3 +462,122 @@ async function loadSource() {
   const url = 'data:text/javascript;base64,' + Buffer.from(r.outputFiles[0].text).toString('base64');
   return import(url);
 }
+
+test('profile: View profile (menu) sends GetProfile by key; LOADING, then the head card, BUDDY + PAGE, ┤FRIENDS (2)├ with roles; a viewable friend opens its own profile, a private one is inert; BACK returns', async () => {
+  const { host, mount, contexts, targets, fills } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  const gm = () => host.sends('gmcp').map((s) => [s.pkg, s.data, s.sid]);
+  const yul = targets.find((t) => t.live && t.t.data.buddy.name === 'Yulia Kozlov').t;
+  contexts.find((c) => c.id === 'profile').run(yul);
+  assert.deepEqual(gm().at(-1), ['Spacebook.GetProfile', { key: 'b1' }, 's1']);
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Yulia Kozlov');
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'Loading');
+  assert.equal(p.q('[data-testid=sb-foot]'), null, 'the foot belongs to your book');
+  host.gmcp('s1', 'Spacebook.Profile', PROFILE);
+  assert.equal(p.q('[data-testid=sb-profile] .name').textContent, 'Yulia Kozlov');
+  assert.ok(p.q('[data-testid=sb-is-buddy]'));
+  p.q('[data-testid=sb-page]').click();
+  assert.deepEqual(fills.at(-1), ['page Yulia Kozlov ', 's1']);
+  assert.match(p.q('.sec-head').textContent, /^Friends \(2\)/);
+  const rows = p.all('[data-testid=sb-friend]');
+  assert.deepEqual(rows.map((r) => r.querySelector('.name').textContent), ['Kaori Nagao', 'Duke']);
+  assert.equal(rows[0].querySelector('[data-testid=sb-role]').textContent, 'librarian');
+  assert.equal(rows[1].disabled, true, 'not viewable: inert');
+  assert.equal(rows[1].querySelector('.l3').textContent, 'Private profile');
+  rows[1].click();
+  assert.equal(gm().filter(([k]) => k === 'Spacebook.GetProfile').length, 1);
+  rows[0].click();
+  assert.deepEqual(gm().at(-1), ['Spacebook.GetProfile', { key: 'f1' }, 's1']);
+  host.gmcp('s1', 'Spacebook.Profile', { ...NPC, key: 'f1' });
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Kaori Nagao');
+  assert.match(p.q('.sec-head').textContent, /^Can introduce you to$/);
+  assert.equal(p.q('[data-testid=sb-friends-hidden]').textContent, 'Kaori Nagao keeps their friends to themselves.');
+  p.q('[data-testid=sb-add-buddy]').click();
+  assert.deepEqual(gm().at(-1), ['Spacebook.Add', { name: 'Kaori Nagao' }, 's1']);
+  p.q('[data-testid=sb-back]').click();
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Yulia Kozlov', 'back one view');
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Yulia Kozlov', 'a new list does not throw the view away');
+  p.q('[data-testid=sb-back]').click();
+  assert.equal(p.all('[data-testid=sb-buddy]').length, 6);
+  assert.ok(p.q('[data-testid=sb-foot]'));
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('profile: an error answer reads the reason; an NPC that shares lists ┤CAN INTRODUCE YOU TO (n)├ or NOBODY…; a replayed answer is ignored; the API opens a profile by name', async () => {
+  const { host, mount, ext } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  const open = (who) => ext.api.openProfile(who, 's1');
+  open({ name: 'nobody' });
+  assert.deepEqual(host.sends('gmcp').at(-1).data, { name: 'nobody' });
+  host.gmcp('s1', 'Spacebook.Profile', { key: '', name: '', error: 'I see nothing named "nobody" here.' });
+  assert.equal(p.q('[data-testid=sb-error]').textContent, 'I see nothing named "nobody" here.');
+  p.q('[data-testid=sb-back]').click();
+  open({ key: 'n1', name: 'Kaori Nagao' });
+  host.gmcp('s1', 'Spacebook.Profile', { ...NPC, shares_friends: true, friends_visible: true, friends_hidden: '', friends: [card('y', 'Yulia Kozlov', { role: 'fence', buddy: true, viewable: true })] });
+  assert.match(p.q('.sec-head').textContent, /^Can introduce you to \(1\)/);
+  assert.equal(p.q('[data-testid=sb-friend] [data-testid=sb-role]').textContent, 'fence');
+  open({ key: 'n1' });
+  host.gmcp('s1', 'Spacebook.Profile', { ...NPC, shares_friends: true, friends_visible: true, friends_hidden: '', friends: [] });
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'Nobody they could introduce you to');
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('search: SEARCH PROFILES shows LOADING under "Search: <term>", then ┤RESULTS (n)├; a result opens its profile; none reads NO PUBLIC PROFILES MATCH; an answer for another term is ignored', async () => {
+  const { host, mount } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  host.promptAnswer = 'Gupta';
+  p.q('[data-testid=sb-search-profiles]').click();
+  await tick();
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Search: Gupta');
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'Loading');
+  host.gmcp('s1', 'Spacebook.Results', { term: 'other', results: [] });
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'Loading', 'another term: not ours');
+  host.gmcp('s1', 'Spacebook.Results', RESULTS);
+  assert.match(p.q('.sec-head').textContent, /^Results \(1\)/);
+  p.q('[data-testid=sb-result]').click();
+  assert.deepEqual(host.sends('gmcp').at(-1).data, { key: 'r1' });
+  p.q('[data-testid=sb-back]').click();
+  assert.ok(p.q('[data-testid=sb-result]'), 'back to the results, without asking again');
+  host.promptAnswer = 'zzz';
+  p.q('[data-testid=sb-back]').click();
+  p.q('[data-testid=sb-search-profiles]').click();
+  await tick();
+  host.gmcp('s1', 'Spacebook.Results', { term: 'zzz', results: [] });
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'No public profiles match');
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('share toggle: SHARE FRIENDS when the list says share_friends false, sends share: true', async () => {
+  const { host, mount } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', { ...LIST, self: { ...LIST.self, share_friends: false } });
+  const b = p.q('[data-testid=sb-share-toggle]');
+  assert.equal(b.textContent, 'Share friends');
+  assert.equal(b.getAttribute('aria-pressed'), 'false');
+  b.click();
+  assert.deepEqual(host.sends('gmcp').at(-1).data, { share: true });
+  p.off();
+  await host.unload();
+});
+
+test('exports: cardOf, profileOf, resultsOf normalise; hidden friends are dropped', async () => {
+  const { cardOf, profileOf, resultsOf } = await loadSource();
+  assert.equal(cardOf({ name: 'no key' }), null);
+  assert.deepEqual(cardOf({ key: 'k', name: ' A ', status: 'ONLINE', viewable: 1 }), { key: 'k', name: 'A', role: '', status: 'online', portrait: 'placeholder', acquaintance: '', buddy: false, viewable: false, blurb: '', location: '' });
+  assert.deepEqual(profileOf({ key: 'x', name: 'n', error: 'nope' }), { key: 'x', name: 'n', error: 'nope' });
+  assert.equal(profileOf('x'), null);
+  const p = profileOf({ ...NPC, friends: [card('a', 'A')] });
+  assert.deepEqual(p.friends, [], 'friends_visible false: none, whatever was sent');
+  assert.equal(p.introducer, true);
+  assert.deepEqual(resultsOf({ term: ' t ', results: [{ key: 'a', name: 'A' }, { name: 'x' }] }).results.map((c) => c.key), ['a']);
+});

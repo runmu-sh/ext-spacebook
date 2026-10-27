@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spacebook.Results",
+  "$comment": "The answer to Spacebook.Search: public profiles whose name, line of work or blurb contains the term.",
+  "type": "object",
+  "required": [
+    "term",
+    "results"
+  ],
+  "properties": {
+    "term": {
+      "type": "string"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/card"
+      }
+    }
+  },
+  "$defs": {
+    "card": {
+      "type": "object",
+      "required": [
+        "key",
+        "name"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "portrait": {
+          "type": "string"
+        },
+        "acquaintance": {
+          "type": "string"
+        },
+        "blurb": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "buddy": {
+          "type": "boolean"
+        },
+        "viewable": {
+          "type": "boolean",
+          "$comment": "The viewer may ask for this profile."
+        }
+      }
+    }
+  }
+}

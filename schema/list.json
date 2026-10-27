@@ -12,6 +12,7 @@
         "name": { "type": "string" },
         "blurb": { "type": "string" },
         "public": { "type": "boolean" },
+        "share_friends": { "type": "boolean", "$comment": "Whether your buddies can see your friends." },
         "portrait": { "type": "string" }
       }
     },
@@ -29,7 +30,9 @@
         "acquaintance": { "type": "string" },
         "location": { "type": "string" },
         "blurb": { "type": "string" },
-        "portrait": { "type": "string" }
+        "portrait": { "type": "string" },
+        "role": { "type": "string", "$comment": "Line of work; '' for most players." },
+        "shares_friends": { "type": "boolean" }
       }
     }
   }

@@ -1,0 +1,1 @@
+{ "$comment": "Spacebook.SetShareFriends: whether your buddies can see your friends.", "type": "object", "required": ["share"], "properties": { "share": { "type": "boolean" } } }

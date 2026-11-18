@@ -450,8 +450,12 @@ test('style: every rule is scoped under .ext-panel[data-ext="spacebook"] .mu-spa
   assert.doesNotMatch(SPACEBOOK_CSS, /font-family:(?![^;]*--font-mono)/, 'one font');
 });
 
-/** The source module bundled against the SDK package (its `h` draws on happy-dom), for the pure exports. */
-async function loadSource() {
+/**
+ * The source module bundled against the SDK package (its `h` draws on happy-dom), for the pure exports. The same text
+ * is the same module instance (a data URL); `fresh` makes a new one, so a test that shortens `RETRY` touches only its own.
+ */
+let freshN = 0;
+async function loadSource({ fresh = false } = {}) {
   const req = createRequire(join(ROOT, 'package.json'));
   const esbuild = await import(pathToFileURL(req.resolve('esbuild')).href);
   const r = await esbuild.build({
@@ -459,7 +463,8 @@ async function loadSource() {
     plugins: [{ name: 'sdk', setup(b) { b.onResolve({ filter: /^@muclient\/sdk$/ }, () => ({ path: req.resolve('@muclient/sdk') })); } }],
     mainFields: ['module', 'main'], conditions: ['import', 'default'],
   });
-  const url = 'data:text/javascript;base64,' + Buffer.from(r.outputFiles[0].text).toString('base64');
+  const text = fresh ? `${r.outputFiles[0].text}\n// fresh ${++freshN}\n` : r.outputFiles[0].text;
+  const url = 'data:text/javascript;base64,' + Buffer.from(text).toString('base64');
   return import(url);
 }
 
@@ -568,6 +573,196 @@ test('share toggle: SHARE FRIENDS when the list says share_friends false, sends 
   assert.deepEqual(host.sends('gmcp').at(-1).data, { share: true });
   p.off();
   await host.unload();
+});
+
+// ─── 1.2.0: asking for the list, self-healing the declaration, error and cached ───
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const timers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
+/** The extension from a fresh source bundle (its own module instance, so `RETRY` can be shortened), loaded into a fresh host. */
+async function setupFast({ delays = [20, 30, 40], redeclareGap = 0, refreshGap = 0, sessions, ...rest } = {}) {
+  const src = await loadSource({ fresh: true });
+  Object.assign(src.RETRY, { delays, redeclareGap, refreshGap });
+  const host = createHost({ root: ROOT, sessions: sessions ?? [{ id: 's1', worldId: 'w1' }], ...rest });
+  const f = fake(host);
+  const ext = await host.load(src.default);
+  const gets = (sid = 's1') => host.sends('gmcp', sid).filter((s) => s.pkg === 'Spacebook.Get');
+  const supports = () => host.calls.filter((c) => c.path === 'gmcp.supports').map((c) => c.args[0]);
+  const mount = (sid = 's1') => {
+    const el = document.createElement('div');
+    document.body.append(el);
+    const off = host.panels.get('spacebook').mount(el, { sid, worldId: 'w1', params: {} });
+    return { el, off, q: (s) => el.querySelector(s), all: (s) => [...el.querySelectorAll(s)] };
+  };
+  return { src, host, ext, mount, gets, supports, ...f };
+}
+
+test('asking: a connected session with no list sends Spacebook.Get after the first delay, backs off along RETRY, and stops when a list arrives; supports at activation and again from the second step; no timers after unload', async () => {
+  const before = timers();
+  const { src, host, gets, supports } = await setupFast({ delays: [20, 30, 40] });
+  assert.deepEqual(src.RETRY.delays, [20, 30, 40]);
+  assert.deepEqual(supports(), [['Spacebook 1']], 'declared once at activation');
+  assert.deepEqual(gets(), [], 'not before the first delay (the server gets a chance to push)');
+  await sleep(28);
+  assert.equal(gets().length, 1, 'the first Get after ~20 ms');
+  assert.deepEqual(gets()[0], { kind: 'gmcp', sid: 's1', pkg: 'Spacebook.Get', data: {} });
+  assert.equal(supports().length, 1, 'the first step does not re-declare');
+  await sleep(35);
+  assert.equal(gets().length, 2, 'the second after a further ~30 ms');
+  assert.equal(supports().length, 2, 'the second step re-declares Spacebook 1');
+  assert.deepEqual(supports()[1], ['Spacebook 1']);
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  const n = gets().length;
+  await sleep(100);
+  assert.equal(gets().length, n, 'a list stops the asking');
+  assert.equal(host.errors.length, 0);
+  assert.ok(host.live().filter((k) => k === 'gmcp.supports').length >= 2, 'every supports Dispose stays live until deactivation');
+  await host.unload();
+  assert.deepEqual(host.live(), []);
+  await sleep(0);
+  assert.equal(timers(), before, 'no timer outlives the extension');
+});
+
+test('asking: the schedule repeats its last delay while still waiting; nothing is sent while GMCP is not negotiated; leaving connected stops it and connected restarts it from the first delay', async () => {
+  const { host, gets, supports } = await setupFast({ delays: [20, 20] });
+  await sleep(110);
+  const n = gets().length;
+  assert.ok(n >= 3 && n <= 6, `keeps asking every 20 ms: ${n}`);
+  assert.ok(supports().length >= 2 && supports().length <= n, `re-declares at most once per step: ${supports().length}`);
+  host.setState('s1', 'idle');
+  await sleep(60);
+  assert.equal(gets().length, n, 'idle: no more asking');
+  host.mu.gmcp.negotiated = () => false;
+  host.setState('s1', 'connected');
+  await sleep(60);
+  assert.equal(gets().length, n, 'connected but GMCP not negotiated: polls without sending');
+  host.mu.gmcp.negotiated = () => true;
+  await sleep(50);
+  assert.ok(gets().length > n, 'negotiated: the asking goes on');
+  assert.equal(host.errors.length, 0);
+  await host.unload();
+  assert.deepEqual(host.live(), []);
+});
+
+test('asking: a cleared GMCP state (the watch delivers undefined on a MUD reconnect) drops the held list, redraws WAITING FOR SPACEBOOK and restarts the schedule; a closed session clears its timer', async () => {
+  const { host, ext, mount, gets } = await setupFast({ delays: [20, 20] });
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  const p = mount();
+  assert.equal(p.all('[data-testid=sb-buddy]').length, 6);
+  await sleep(50);
+  assert.equal(gets().length, 0, 'a list from the start: nothing asked');
+  host.gmcp('s1', 'Spacebook.List', undefined);
+  assert.equal(ext.api.list('s1'), null);
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'Waiting for Spacebook');
+  assert.equal(p.q('[data-testid=sb-add]'), null, 'nothing to add to without a book');
+  assert.ok(p.q('[data-testid=sb-refresh]'), 'REFRESH in the waiting state');
+  await sleep(30);
+  assert.equal(gets().length, 1, 'asking again after the first delay');
+  host.open({ id: 's2', worldId: 'w2' });
+  await sleep(30);
+  assert.ok(gets('s2').length >= 1, 'a new session asks too');
+  const before = timers();
+  host.close('s2');
+  assert.ok(timers() < before, 'closing a session clears its timer');
+  p.off();
+  assert.equal(host.errors.length, 0);
+  await host.unload();
+});
+
+test('error: NO SIGNAL over the server text verbatim, no sections, no ADD, no foot; the badge clears; a later live list brings everything back', async () => {
+  const { host, mount, badges } = await setupFast();
+  const p = mount();
+  const why = 'Your wristpad has no signal here. PDAs only work in character.';
+  host.gmcp('s1', 'Spacebook.List', { error: why, self: { name: 'Nyx', blurb: '', public: false, share_friends: false, portrait: '' }, pending: [], buddies: [] });
+  assert.equal(p.q('[data-testid=sb-empty] .lbl').textContent, 'No signal');
+  assert.equal(p.q('[data-testid=sb-reason]').textContent, why);
+  assert.equal(p.q('[data-testid=sb-empty]').className, 'reason');
+  assert.deepEqual(p.all('.sec-head'), [], 'no PENDING or BUDDIES heads');
+  assert.equal(p.q('[data-testid=sb-foot]'), null, 'no mutation buttons');
+  assert.equal(p.q('[data-testid=sb-add]'), null);
+  assert.equal(p.q('[data-testid=sb-edit-blurb]'), null);
+  assert.ok(p.q('[data-testid=sb-refresh]'));
+  assert.equal(p.q('[data-testid=sb-cached]'), null);
+  assert.deepEqual(badges.at(-1), ['spacebook', null, 's1']);
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  assert.equal(p.q('[data-testid=sb-reason]'), null);
+  assert.ok(p.q('[data-testid=sb-add]'));
+  assert.ok(p.q('[data-testid=sb-foot]'));
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('cached: a CACHED · <ago> note under the bar, the list and its mutation buttons stay; a live list removes the note; a keystroke keeps it', async () => {
+  const { host, mount } = await setupFast();
+  const p = mount();
+  const then = Math.floor(Date.now() / 1000) - 12 * 60;
+  host.gmcp('s1', 'Spacebook.List', { ...LIST, cached: then });
+  const note = p.q('[data-testid=sb-cached]');
+  assert.equal(note.textContent, 'Cached · 12 min ago');
+  assert.equal(note.className, 'note');
+  assert.equal(note.previousElementSibling.className, 'bar', 'right under the bar');
+  assert.equal(note.nextElementSibling.className, 'scroll');
+  assert.equal(names(p).length, 6);
+  assert.ok(p.q('[data-testid=sb-add]'));
+  assert.ok(p.q('[data-testid=sb-edit-blurb]'), 'mutations stay: the server says when there is no carrier');
+  const i = p.q('[data-testid=sb-search]');
+  i.value = 'ray'; i.dispatchEvent(new win.Event('input', { bubbles: true }));
+  assert.equal(p.q('[data-testid=sb-cached]').textContent, 'Cached · 12 min ago');
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  assert.equal(p.q('[data-testid=sb-cached]'), null);
+  p.off();
+  await host.unload();
+});
+
+test('REFRESH: sends Spacebook.Get at once and re-declares Spacebook 1, in the waiting state and in the book; api.refresh does the same', async () => {
+  const { host, ext, mount, gets, supports } = await setupFast({ delays: [5000] });
+  const p = mount();
+  assert.equal(supports().length, 1);
+  p.q('[data-testid=sb-refresh]').click();
+  await tick();
+  assert.equal(gets().length, 1);
+  assert.equal(supports().length, 2, 're-declared');
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  assert.equal(p.q('.bar [data-testid=sb-refresh]').className, 'sh-cmd refresh', 'in the bar, right-aligned by .refresh');
+  p.q('[data-testid=sb-refresh]').click();
+  await tick();
+  assert.equal(gets().length, 2);
+  assert.equal(await ext.api.refresh('s1'), true);
+  assert.equal(gets().length, 3);
+  assert.equal(supports().length, 4);
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+  assert.deepEqual(host.live(), []);
+});
+
+test('exports: listOf keeps error (trimmed) and cached (a positive integer), agoOf, RETRY defaults, SUPPORTS', async () => {
+  const { listOf, agoOf, RETRY, retryDelay, SUPPORTS, COPY } = await loadSource();
+  assert.deepEqual(SUPPORTS, ['Spacebook 1']);
+  assert.deepEqual(RETRY.delays, [2000, 6000, 15000, 40000, 90000]);
+  assert.equal(RETRY.redeclareFrom, 1);
+  assert.equal(retryDelay(0), 2000);
+  assert.equal(retryDelay(4), 90000);
+  assert.equal(retryDelay(99), 90000, 'the last delay repeats');
+  const plain = listOf({ self: { name: 'N' }, pending: [], buddies: [] });
+  assert.equal('error' in plain, false);
+  assert.equal('cached' in plain, false);
+  const e = listOf({ error: ' No wristpad. ', self: { name: 'N' }, pending: [], buddies: [] });
+  assert.equal(e.error, 'No wristpad.');
+  assert.equal(listOf({ error: '', self: {}, pending: [], buddies: [] }).error, undefined);
+  assert.equal(listOf({ cached: 1700000000.7, self: {}, pending: [], buddies: [] }).cached, 1700000000);
+  assert.equal(listOf({ cached: 'x', self: {}, pending: [], buddies: [] }).cached, undefined);
+  assert.equal(listOf({ cached: 0, self: {}, pending: [], buddies: [] }).cached, undefined);
+  const now = 1_800_000_000_000;
+  assert.equal(agoOf(now / 1000 - 3, now), 'just now');
+  assert.equal(agoOf(now / 1000 - 45, now), '45 s ago');
+  assert.equal(agoOf(now / 1000 - 12 * 60, now), '12 min ago');
+  assert.equal(agoOf(now / 1000 - 3 * 3600, now), '3 h ago');
+  assert.equal(agoOf(now / 1000 - 5 * 86400, now), '5 d ago');
+  assert.equal(agoOf(now / 1000 + 100, now), 'just now', 'a clock ahead of the server is not negative');
+  assert.equal(COPY.cached('12 min ago'), 'Cached · 12 min ago');
+  assert.equal(COPY.noSignal, 'No signal');
 });
 
 test('exports: cardOf, profileOf, resultsOf normalise; hidden friends are dropped', async () => {

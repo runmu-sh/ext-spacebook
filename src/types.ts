@@ -75,6 +75,13 @@ export interface SpacebookList {
   self: SpacebookSelf;
   pending: SpacebookRecord[];
   buddies: SpacebookRecord[];
+  /**
+   * Why there is no live book ("Your wristpad has no signal here. PDAs only work in character.", "No wristpad.", …).
+   * Then `self` is a placeholder and both lists are empty; nothing can be changed until it clears. @since 1.2.0
+   */
+  error?: string;
+  /** Unix seconds of the pad's last sync when the list is the cached copy shown off-net. @since 1.2.0 */
+  cached?: number;
 }
 
 /** What the panel shows: your book, someone's profile (null while it loads), or search results (null while they load). */
@@ -94,7 +101,10 @@ declare module '@muclient/sdk' {
 export interface SpacebookApi {
   /** The last `Spacebook.List` of a session (default the active one), or null before the first. */
   list(sid?: string): SpacebookList | null;
-  /** Ask the server to send the list again (`Spacebook.Get`). */
+  /**
+   * Ask the server to send the list again (`Spacebook.Get`) and re-declare `Spacebook 1` (since 1.2.0, so a
+   * declaration lost to a reconnect comes back). Resolves whether the send went out.
+   */
   refresh(sid?: string): Promise<boolean>;
   /** Open someone's profile in the panel (`Spacebook.GetProfile` by key, or by name). @since 1.1.0 */
   openProfile(who: { key?: string; name?: string }, sid?: string): void;

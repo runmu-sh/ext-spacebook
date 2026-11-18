@@ -1,10 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spacebook.List",
-  "$comment": "The whole Spacebook, sent on login, on Core.Supports, every 30 s when changed, and after every mutation.",
+  "$comment": "The whole Spacebook, sent on login, on Core.Supports, every 30 s when changed, after every mutation, and in answer to Spacebook.Get. With `error` there is no live book (self is a placeholder, both lists empty); with `cached` the list is the pad's last sync.",
   "type": "object",
   "required": ["self", "pending", "buddies"],
   "properties": {
+    "error": { "type": "string", "$comment": "Why there is no live book, e.g. \"Your wristpad has no signal here. PDAs only work in character.\"" },
+    "cached": { "type": "integer", "$comment": "Unix seconds of the pad's last sync, when the list is shown off-net." },
     "self": {
       "type": "object",
       "required": ["name"],

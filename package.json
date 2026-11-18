@@ -1,6 +1,6 @@
 {
   "name": "@runmu.sh/ext-spacebook",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "The Spacebook panel for Torchship: your buddies and their status, location, acquaintance and blurb, pending buddy requests, your own profile, profile search, and who your buddies (and the denizens you know) can introduce you to, from GMCP Spacebook.",
   "keywords": [
     "spacebook",

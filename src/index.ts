@@ -8,8 +8,20 @@
  * rows "▸ Name — wants to be buddies [ ACCEPT ]"; ┤BUDDIES (n)├ rows with a 56px portrait box (initials while the
  * portrait is "placeholder"), name + status plate, "acquaintance · location", and the blurb; a foot with YOU <name>
  * [PUBLIC], your blurb and [ EDIT BLURB ] [ GO PRIVATE ] [ SEARCH PROFILES ]. Before the first list it reads
- * WAITING FOR SPACEBOOK, with no buddies NO BUDDIES YET. Right-click or ▸ on a buddy row opens the `spacebook.buddy`
- * context menu (Page, Remove buddy).
+ * WAITING FOR SPACEBOOK with a [ REFRESH ], with no buddies NO BUDDIES YET. A list with `error` (no wristpad, no
+ * signal…) reads NO SIGNAL over the server's reason and hides every mutation; one with `cached` (the pad's last
+ * sync, shown off-net) carries a CACHED · <ago> note under the bar. Right-click or ▸ on a buddy row opens the
+ * `spacebook.buddy` context menu (Page, Remove buddy).
+ *
+ * Asking, not only waiting (1.2.0): while a connected session holds no list the extension sends `Spacebook.Get {}`
+ * on a bounded backoff ({@link RETRY}: 2 s, 6 s, 15 s, 40 s, then every 90 s) until a list arrives, and from the
+ * second step on re-declares `Spacebook 1` with `mu.gmcp.supports`. After a WebSocket reconnect the backend can
+ * forget this connection's declarations (it then sends `Core.Supports.Remove` and the game drops every push); a
+ * repeated `supports` is a no-op at the backend when the declaration stands and re-adds it when it was lost, and
+ * the game answers `Core.Supports.Add` with a fresh list. Every Dispose it returns goes into `ctx.subscriptions`
+ * and is never called early: disposing one would send `remove` for the same (connection, extension) owner and
+ * withdraw the package. A MUD reconnect clears the GMCP state (the watch delivers `undefined`), which drops the
+ * held list and restarts the schedule; `state: connected` restarts it too; leaving `connected` stops it.
  *
  * Shown 'auto': the panel joins Views and adds itself the first time a session receives a list. Activation is
  * `onGmcp:Spacebook`, so on a game that never sends the package the extension stays dormant.
@@ -24,8 +36,35 @@ export { COPY } from './copy';
 
 const ID = 'spacebook';
 const PKG = 'Spacebook.List';
+/** What `mu.gmcp.supports` declares (the manifest's package, re-declared at runtime to heal a lost declaration). */
+export const SUPPORTS = ['Spacebook 1'];
 /** Synced per world: pending keys already announced (the last 500). */
 const SEEN_KEY = 'seen.pending';
+
+/**
+ * The `Spacebook.Get` schedule while a connected session holds no list, in ms: the first wait gives the server's
+ * own login push a chance, then it backs off; the last value repeats while still waiting. A re-declaration of
+ * {@link SUPPORTS} goes with every step from the second on (`redeclareFrom`), so in the steady state it is one
+ * per 90 s, and at most `redeclareMax` per waiting spell (each one is a live registration kept until deactivation,
+ * so the count stays bounded; the Get keeps going). Mutable, so a test can shorten it (`RETRY.delays = [...]`).
+ */
+export const RETRY: { delays: number[]; redeclareFrom: number; redeclareMax: number; redeclareGap: number; refreshGap: number } =
+  { delays: [2_000, 6_000, 15_000, 40_000, 90_000], redeclareFrom: 1, redeclareMax: 24, redeclareGap: 30_000, refreshGap: 5_000 };
+export const retryDelay = (step: number) => RETRY.delays[Math.min(step, RETRY.delays.length - 1)] ?? 90_000;
+/** Runtime re-declarations in one activation, in all (each is a registration that lives until deactivation). */
+export const DECLARE_MAX = 1000;
+
+/** A relative time for the CACHED note: `then` in unix seconds, `now` in ms. Terse, no libraries. */
+export function agoOf(then: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round(now / 1000 - then));
+  if (s < 10) return COPY.ago.now;
+  if (s < 60) return COPY.ago.s(s);
+  const m = Math.round(s / 60);
+  if (m < 60) return COPY.ago.min(m);
+  const hh = Math.round(m / 60);
+  if (hh < 48) return COPY.ago.h(hh);
+  return COPY.ago.d(Math.round(hh / 24));
+}
 
 /** Acquaintance words drawn in `--alert`. */
 export const HOSTILE = new Set(['rival', 'adversary', 'enemy', 'nemesis', 'hated enemy', 'disliked', 'wary rival', 'feared', 'dreaded', 'terrifying', 'menacing', 'intimidating', 'unnerving']);
@@ -45,7 +84,12 @@ ${R} *, ${R} *::before, ${R} *::after { box-sizing: border-box; }
 ${R}:focus { outline: none; }
 ${R} .bar { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 4px 8px; background: var(--bg-elev); border-bottom: 1px solid var(--accent); }
 ${R} .bar .sh-field { flex: 1; min-width: 6ch; }
+${R} .bar .refresh { margin-left: auto; }
+${R} .note { margin: 0; padding: 3px 10px; font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-faint); border-bottom: 1px solid var(--border); }
 ${R} .scroll { flex: 1; overflow-y: auto; padding: 0 10px 6px; }
+${R} .reason { margin: .9rem 0 0; display: flex; flex-direction: column; gap: 4px; }
+${R} .reason .lbl { font-style: normal; font-size: .64rem; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-faint); }
+${R} .reason .why { font-size: .82rem; color: var(--fg-dim); }
 ${R} .sec-head { margin: .9rem 0 .4rem; }
 ${R} .pend { display: flex; align-items: center; gap: 10px; padding: 5px 0 5px 2.4ch; border-bottom: 1px solid var(--border); font-size: .82rem; position: relative; }
 ${R} .pend::before { content: "▸"; position: absolute; left: .8ch; color: var(--gold); }
@@ -138,11 +182,15 @@ export function listOf(data: unknown): SpacebookList | null {
   const d = data as Record<string, unknown>;
   const self = (d.self && typeof d.self === 'object' ? d.self : {}) as Record<string, unknown>;
   const recs = (v: unknown) => (Array.isArray(v) ? v.map(recordOf).filter((r): r is SpacebookRecord => !!r) : []);
-  return {
+  const out: SpacebookList = {
     self: { name: str(self.name).trim(), blurb: str(self.blurb).trim(), public: !!self.public, share_friends: self.share_friends !== false, portrait: str(self.portrait).trim() || 'placeholder' },
     pending: recs(d.pending),
     buddies: recs(d.buddies),
   };
+  const error = str(d.error).trim();
+  if (error) out.error = error;
+  if (typeof d.cached === 'number' && Number.isFinite(d.cached) && d.cached > 0) out.cached = Math.floor(d.cached);
+  return out;
 }
 
 /** Initials for a placeholder portrait: the first letter of the first two words ("Radical Ray" → RR, "Ol' Red" → OR). */
@@ -182,6 +230,8 @@ export interface PanelHost {
   setPublic(on: boolean): void;
   searchProfiles(): void;
   setShareFriends(on: boolean): void;
+  /** [ REFRESH ]: send `Spacebook.Get` now and re-declare the package. */
+  refresh(): void;
   /** Open someone's profile (`Spacebook.GetProfile`) on top of the current view. */
   openProfile(who: { key?: string; name?: string }): void;
   /** Back to the previous view. */
@@ -194,22 +244,31 @@ export interface PanelHost {
   openMenu(el: HTMLElement): void;
 }
 
-/** The panel's DOM for one state. Exported for tests. `query` is the live search text. */
-export function renderPanel(hostApi: PanelHost, query: string): { bar: HTMLElement; body: HTMLElement[]; foot: HTMLElement | null; targets: Dispose[] } {
+/**
+ * The panel's DOM for one state. Exported for tests. `query` is the live search text. `note` is the CACHED line under
+ * the bar (null when the list is live); without a list or with `error` nothing can be changed, so ADD and the foot go.
+ */
+export function renderPanel(hostApi: PanelHost, query: string): { bar: HTMLElement; note: HTMLElement | null; body: HTMLElement[]; foot: HTMLElement | null; targets: Dispose[] } {
   const css = hostApi.css;
   const list = hostApi.list();
   const f = hostApi.filter();
   const targets: Dispose[] = [];
   const toggle = (which: 'online' | 'offline', label: string, on: boolean) =>
     h('button', { class: `${css.toggle}${on ? '' : ` ${css.off}`}`, type: 'button', 'aria-pressed': String(on), 'data-testid': `sb-filter-${which}`, onclick: () => hostApi.setFilter(which, !on) }, label);
+  const canChange = !!list && !list.error;
+  const refresh = h('button', { class: `${css.cmd} refresh`, type: 'button', 'data-testid': 'sb-refresh', title: COPY.refresh, onclick: () => hostApi.refresh() }, COPY.refresh);
   const bar = h('div', { class: 'bar' },
     toggle('online', COPY.online, f.online),
     toggle('offline', COPY.offline, f.offline),
     h('input', { class: css.field, type: 'search', name: 'query', value: query, placeholder: COPY.search, 'aria-label': COPY.search, 'data-testid': 'sb-search', autocomplete: 'off' }),
-    h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-add', onclick: () => hostApi.add() }, COPY.add),
+    canChange ? h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-add', onclick: () => hostApi.add() }, COPY.add) : null,
+    refresh,
   );
   const head = (label: string, n: number) => secHead(css, label, n);
-  if (!list) return { bar, body: [h('p', { class: `${css.empty} awaiting`, 'data-testid': 'sb-empty' }, COPY.awaiting)], foot: null, targets };
+  if (!list) return { bar, note: null, body: [h('p', { class: `${css.empty} awaiting`, 'data-testid': 'sb-empty' }, COPY.awaiting)], foot: null, targets };
+  const note = list.cached ? h('p', { class: 'note', 'data-testid': 'sb-cached' }, COPY.cached(agoOf(list.cached))) : null;
+  // The server's reason there is no book: the label line, then its text verbatim. Nothing else to draw.
+  if (list.error) return { bar, note, body: [h('div', { class: 'reason', 'data-testid': 'sb-empty', role: 'status' }, h('span', { class: 'lbl' }, COPY.noSignal), h('span', { class: 'why', 'data-testid': 'sb-reason' }, list.error))], foot: null, targets };
 
   const body: HTMLElement[] = [];
   if (list.pending.length) {
@@ -242,7 +301,7 @@ export function renderPanel(hostApi: PanelHost, query: string): { bar: HTMLEleme
       h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-public-toggle', onclick: () => hostApi.setPublic(!you.public) }, you.public ? COPY.goPrivate : COPY.goPublic),
       h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-share-toggle', 'aria-pressed': String(you.share_friends), onclick: () => hostApi.setShareFriends(!you.share_friends) }, you.share_friends ? COPY.hideFriends : COPY.shareFriends),
       h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-search-profiles', onclick: () => hostApi.searchProfiles() }, COPY.searchProfiles)));
-  return { bar, body, foot, targets };
+  return { bar, note, body, foot, targets };
 }
 
 /** A person as a row: portrait, name + status plate (+ role), "acquaintance · location", blurb. Buddy rows, friends and results share it. */
@@ -333,6 +392,16 @@ export default defineExtension({
     mu.ui.style(SPACEBOOK_CSS);
     const css = mu.ui.css;
 
+    /**
+     * Declare `Spacebook 1` at runtime, on top of the manifest's declaration. The backend keeps one declaration per
+     * (connection, extension), so a repeat is a no-op while it stands and re-adds the package after a reconnect
+     * lost it (the game then answers `Core.Supports.Add` with a fresh list). Each Dispose goes into
+     * `ctx.subscriptions` and none is called before deactivation: disposing one sends `remove` for the same owner
+     * and would withdraw the package from the game.
+     */
+    const declare = () => { ctx.subscriptions.push(mu.gmcp.supports(SUPPORTS)); };
+    declare();
+
     mu.settings.define({
       title: COPY.settingsTitle,
       items: [
@@ -390,6 +459,48 @@ export default defineExtension({
     };
 
     const send = (sid: string, pkg: string, data: unknown) => { void mu.gmcp.send(pkg, data, sid); };
+
+    // ─── asking for the list ───
+    /** Per session: the retry timer, where it is in the schedule, and how often this spell re-declared. */
+    const waits = new Map<string, { timer: ReturnType<typeof setTimeout> | null; step: number; redeclared: number }>();
+    let lastDeclare = 0, declared = 0;
+    /**
+     * A re-declaration (each is a live registration kept until deactivation, so they are capped): at most one per
+     * `minGap` ms across sessions, {@link RETRY.redeclareMax} per waiting spell and {@link DECLARE_MAX} in all.
+     */
+    const redeclare = (w: { redeclared: number } | null, minGap: number) => {
+      const now = Date.now();
+      if (declared >= DECLARE_MAX || now - lastDeclare < minGap || (w && w.redeclared >= RETRY.redeclareMax)) return false;
+      if (w) w.redeclared++;
+      declared++; lastDeclare = now; declare();
+      return true;
+    };
+    const stopAsking = (sid: string) => { const w = waits.get(sid); if (w?.timer) { clearTimeout(w.timer); w.timer = null; } };
+    const connected = (sid: string) => mu.sessions.list().find((s) => s.id === sid)?.state === 'connected';
+    /** Arm the next `Spacebook.Get` for a connected session without a list; a no-op once a list is held or the link is down. */
+    const askLater = (sid: string) => {
+      const w = waits.get(sid);
+      if (!w || lists.has(sid) || !connected(sid)) { stopAsking(sid); return; }
+      if (w.timer) clearTimeout(w.timer);
+      w.timer = setTimeout(() => {
+        w.timer = null;
+        if (lists.has(sid) || !connected(sid)) return;
+        // GMCP not up yet: nothing to send, check again after the same wait without spending a step.
+        if (!mu.gmcp.negotiated(sid)) { askLater(sid); return; }
+        if (w.step >= RETRY.redeclareFrom) redeclare(w, RETRY.redeclareGap);
+        send(sid, 'Spacebook.Get', {});
+        w.step++;
+        askLater(sid);
+      }, retryDelay(w.step));
+    };
+    /** Start the schedule over: on `connected`, and when the held list is cleared. */
+    const askFresh = (sid: string) => { const w = waits.get(sid); if (!w) return; stopAsking(sid); w.step = 0; w.redeclared = 0; askLater(sid); };
+    /** [ REFRESH ] and `api.refresh`: ask now and re-declare (a player's click, so a short gap), whatever the schedule says. */
+    const refreshNow = async (sid: string) => {
+      redeclare(null, RETRY.refreshGap);
+      return (await mu.gmcp.send('Spacebook.Get', {}, sid)) === true;
+    };
+
     const mount = (hostEl: HTMLElement, pc: PanelMountCtx): Dispose => {
       const root = h('section', { class: 'mu-spacebook', 'aria-label': COPY.title, 'data-focus-region': ID, tabindex: '-1', 'data-testid': 'spacebook' });
       hostEl.append(root);
@@ -439,6 +550,7 @@ export default defineExtension({
           if (term?.trim()) { push({ kind: 'search', term: term.trim(), results: null }); send(sid, 'Spacebook.Search', { term: term.trim() }); }
         },
         setShareFriends: (on) => { if (sid) send(sid, 'Spacebook.SetShareFriends', { share: on }); },
+        refresh: () => { if (sid) void refreshNow(sid); },
         openProfile: (who) => {
           if (!sid || (!who.key && !who.name)) return;
           push({ kind: 'profile', key: who.key ?? '', name: who.name ?? '', profile: null });
@@ -468,7 +580,7 @@ export default defineExtension({
         const input = out.bar.querySelector<HTMLInputElement>('input[name=query]');
         input?.addEventListener('input', () => { query = input.value; drawBody(); });
         const scroll = h('div', { class: 'scroll' }, ...out.body);
-        root.replaceChildren(out.bar, scroll, ...(out.foot ? [out.foot] : []));
+        root.replaceChildren(out.bar, ...(out.note ? [out.note] : []), scroll, ...(out.foot ? [out.foot] : []));
         scroll.scrollTop = top;
       };
       /** A keystroke in the search redraws the list only, so the field keeps focus and its caret. */
@@ -477,7 +589,10 @@ export default defineExtension({
         for (const d of targets) d();
         const out = renderPanel(api, query);
         targets = out.targets;
-        root.querySelector('.scroll')?.replaceChildren(...out.body);
+        const scroll = root.querySelector('.scroll');
+        scroll?.replaceChildren(...out.body);
+        const note = root.querySelector('.note');
+        if (out.note) { if (note) note.replaceWith(out.note); else scroll?.before(out.note); } else note?.remove();
         const foot = root.querySelector('.foot');
         if (out.foot) { if (foot) foot.replaceWith(out.foot); else root.append(out.foot); } else foot?.remove();
       };
@@ -503,25 +618,34 @@ export default defineExtension({
     // watch replays it at once, badge and touch included.
     ctx.subscriptions.push(mu.sessions.each((s) => {
       let touched = false;
+      waits.set(s.id, { timer: null, step: 0, redeclared: 0 });
       const off = mu.gmcp.watch(PKG, (data, m) => {
         const list = listOf(data);
-        if (!list) { if (data === undefined) { lists.delete(s.id); redraw(s.id); } return; }
+        // A MUD reconnect clears the GMCP state: the list goes and the asking starts over.
+        if (!list) { if (data === undefined) { lists.delete(s.id); redraw(s.id); askFresh(s.id); } return; }
         lists.set(s.id, list);
+        stopAsking(s.id);
         if (!touched) { touched = true; mu.panels.touch(ID, s.id); }
         announce(s.id, list, !!m.replay);
         redraw(s.id);
       }, { sid: s.id });
+      // The link: `connected` starts the schedule over (a fresh connection has no declarations and no push yet); anything else stops it.
+      const offS = mu.sessions.on('state', (ref) => { if (ref.state === 'connected') askFresh(s.id); else stopAsking(s.id); }, { sid: s.id });
+      // Already connected with no list (the common case right after activation): start asking.
+      askLater(s.id);
       // Answers, not state: only fresh ones (a replayed profile belongs to an earlier panel).
       const offP = mu.gmcp.on('Spacebook.Profile', (data, m) => { const p = profileOf(data); if (p && !m.replay) for (const a of panelAnswers.get(s.id) ?? []) a.profile(p); }, { sid: s.id });
       const offR = mu.gmcp.on('Spacebook.Results', (data, m) => { const r = resultsOf(data); if (r && !m.replay) for (const a of panelAnswers.get(s.id) ?? []) a.results(r); }, { sid: s.id });
       const a = mu.settings.watch(SETTINGS.online, () => redraw(s.id), { sid: s.id });
       const b = mu.settings.watch(SETTINGS.offline, () => redraw(s.id), { sid: s.id });
-      return () => { off(); offP(); offR(); a(); b(); lists.delete(s.id); redraws.delete(s.id); panelAnswers.delete(s.id); };
+      return () => { stopAsking(s.id); waits.delete(s.id); off(); offS(); offP(); offR(); a(); b(); lists.delete(s.id); redraws.delete(s.id); panelAnswers.delete(s.id); };
     }));
+    // Deactivation: the `each` dispose above runs per session, and this clears any timer left should it not.
+    ctx.subscriptions.push(() => { for (const sid of [...waits.keys()]) stopAsking(sid); waits.clear(); });
 
     const api: SpacebookApi = {
       list: (sid) => { const s = sid ?? mu.sessions.active()?.id; const l = s ? lists.get(s) : undefined; return l ? structuredClone(l) : null; },
-      refresh: async (sid) => { const s = sid ?? mu.sessions.active()?.id; return s ? (await mu.gmcp.send('Spacebook.Get', {}, s)) === true : false; },
+      refresh: async (sid) => { const s = sid ?? mu.sessions.active()?.id; return s ? refreshNow(s) : false; },
       openProfile: (who, sid) => {
         const s = sid ?? mu.sessions.active()?.id;
         if (!s) return;

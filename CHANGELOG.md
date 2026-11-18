@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- **Asks, not only waits.** While a connected session holds no list the extension sends `Spacebook.Get {}` on a bounded backoff: ~2 s after connecting (the server's own login push gets a chance), then 6 s, 15 s, 40 s, then every 90 s while still waiting. It stops the moment a list arrives, the link leaves `connected` or the session ends; it restarts on every `connected` and when a MUD reconnect clears the GMCP state (which also drops the held list). Nothing is sent before GMCP is negotiated. `WAITING FOR SPACEBOOK` is no longer forever.
+- **Self-heals the declaration.** `Spacebook 1` is declared with `mu.gmcp.supports` at activation and again on each retry step from the second on (at most one per 30 s). After a WebSocket reconnect the backend can forget this connection's declarations and withdraw the package from the game, which then drops every push; the repeat is a no-op while the declaration stands and re-adds it when it was lost, and the game answers `Core.Supports.Add` with a fresh list. The declarations live until deactivation (disposing one early would withdraw the package).
+- **The server's reasons.** `Spacebook.List` may carry `error` (no wristpad, no signal, no account, never synced) and `cached` (unix seconds of the pad's last sync). With `error` the body reads `NO SIGNAL` over the server's text verbatim and every mutation is hidden (ADD and the foot); with `cached` a dim `CACHED · 12 min ago` note sits under the bar and the buttons stay.
+- `[ REFRESH ]` at the right of the bar (and in the waiting state): sends `Spacebook.Get` at once and re-declares the package. `api.refresh` does the same.
+- Exports: `RETRY` (the schedule), `SUPPORTS`, `agoOf`; `SpacebookList.error` / `.cached`; `schema/list.json` knows both keys.
+
 ## 1.1.0
 
 - Profiles: **View profile** on a buddy's menu (and `api.openProfile`) opens their profile over the book with `Spacebook.GetProfile`, showing their friends when they share them, or the server's reason when not. A denizen's friends are the people it could introduce you to (┤CAN INTRODUCE YOU TO├). Friends and results with a viewable profile open it; `[ BACK ]` steps back.

@@ -20,6 +20,14 @@ export const COPY = {
   awaiting: 'Waiting for Spacebook',
   noBuddies: 'No buddies yet',
   noMatch: 'No buddy matches',
+  /** The label line over the server's `error` text (kept verbatim under it). */
+  noSignal: 'No signal',
+  // the bar
+  refresh: 'Refresh',
+  /** The dim note under the bar when the list is the pad's last sync: "CACHED · 12 min ago". */
+  cached: (ago: string) => `Cached · ${ago}`,
+  /** A relative time, terse: "just now", "45 s ago", "12 min ago", "3 h ago", "2 d ago". */
+  ago: { now: 'just now', s: (n: number) => `${n} s ago`, min: (n: number) => `${n} min ago`, h: (n: number) => `${n} h ago`, d: (n: number) => `${n} d ago` },
   // foot
   you: 'You',
   isPublic: 'Public',

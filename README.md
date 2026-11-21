@@ -1,11 +1,12 @@
 # Spacebook (`@runmu.sh/ext-spacebook`, id `spacebook`)
 
-The Spacebook panel of [μClient](https://runmu.sh) for [Torchship](https://torchship.org): your buddies, who is online and where, their blurbs, the requests waiting for you, and your own profile.
+The Spacebook panel of [μClient](https://runmu.sh) for [Torchship](https://torchship.org): your buddies, who is online and where, their blurbs, the requests waiting for you, your own profile, and your contacts: everyone you know by name, what you have learned about them, and your private notes.
 
 First-party, on the [marketplace](https://runmu.sh/marketplace/x/spacebook). Install it from **☰ → Extensions → Discover**; once installed it wakes when a game sends the `Spacebook` GMCP package and adds itself (right bottom) the first time a session receives its list. Turn it off per world in **Extensions → Installed**.
 
 ## The panel
 ```
+ BUDDIES │ CONTACTS
 ■ ONLINE  □ OFFLINE  [ search buddies        ]  [ ADD ]  [ REFRESH ]
 ┤PENDING (1)├
 ▸ Viktor Faust   wants to be buddies            [ ACCEPT ]
@@ -36,11 +37,30 @@ A profile (from a buddy's menu, a friend, or a search result):
 └────┘ PRIVATE PROFILE
 ```
 
+Contacts, and a contact (from CONTACTS, or **Notes** on a buddy's menu):
+```
+ BUDDIES │ CONTACTS                              [ BACK ] Big Roy
+■ ONLINE □ OFFLINE [ search contacts ] [ REFRESH ] ┌────┐ Big Roy  [ONLINE]
+┤CONTACTS (3)├                                     │ BR │ bartender · regular
+┌────┐ Yulia Kozlov [OFFLINE]                      └────┘ NO BLURB
+│ YK │ close friend · Cube 3148                    ┤WHAT YOU KNOW├
+└────┘ Night shift.                                LOVES  real-grain whisky  they told you
+┌────┐ Big Roy [ONLINE]        2 NOTES · 3 KNOWN   LIKES  a decent cup of coffee  from a gift
+│ BR │ bartender · regular                                a deck of holo-cards  from a delivery
+└────┘ NO BLURB                                    ┤YOUR NOTES (2)├
+                                                   [ ADD NOTE ]
+                                                   Owes me 40 cats.
+                                                   10 MIN AGO               [ EDIT ] [ DELETE ]
+```
+
 - **Rows.** A 56 px portrait box (initials while the server sends `"placeholder"`, the picture once it sends a URL), the name and a status plate (`ONLINE` bright, `OFFLINE`/`UNKNOWN` dim, `DECEASED` alert, the portrait struck through), then *acquaintance · location* (the acquaintance in gold, or alert for a hostile word: rival, adversary, enemy, nemesis, hated enemy, disliked, wary rival, feared, dreaded, terrifying, menacing, intimidating, unnerving), then the blurb. Online buddies first, then by name. Pending requests stay in the server's order.
 - **Filters.** `■ ONLINE` and `□ OFFLINE` show or hide each group; deceased and unknown count as offline. They are settings per world (both on by default), so they survive a reload and follow you across devices. The search matches name, blurb, location and acquaintance, case-insensitively, and is kept across a hot reload.
 - **Actions.** `[ ADD ]` asks for a name and sends the request. `[ ACCEPT ]` accepts one. `[ EDIT BLURB ]` opens your blurb (at most 49 characters: the game refuses longer). `[ GO PRIVATE ]` / `[ GO PUBLIC ]` toggles whether others can find you. `[ HIDE FRIENDS ]` / `[ SHARE FRIENDS ]` toggles whether your buddies can see who you are friends with (shared by default). `[ SEARCH PROFILES ]` asks for a word and shows the public profiles whose name, line of work or blurb contain it.
 - **Profiles.** A profile shows the person's card, BUDDY + PAGE or ADD BUDDY, then their friends: for a player their buddies, for a denizen (`introducer`) only the people it could introduce you to (┤CAN INTRODUCE YOU TO├). The server decides what you may see; when the friends are hidden the panel shows the server's reason ("Only X's buddies can see who they know.", "X keeps their friends to themselves."). A friend or result whose profile you may open (`viewable`) opens it; a private one is inert and reads PRIVATE PROFILE. `[ BACK ]` returns one view at a time; a new list does not throw the view away.
-- **Row menu.** Right-click a buddy row, or click its ▸: **View profile**, **Page** fills `page <name> ` in the input (not for the dead); **Remove buddy** asks first, then removes.
+- **Contacts.** The `BUDDIES │ CONTACTS` tabs over the bar switch lists. CONTACTS sends `Spacebook.GetContacts` when opened (and on `[ REFRESH ]` while it is shown) and lists everyone you know by name who is on Spacebook, buddies first, in the server's order, each under the name you know them by with a small `2 NOTES · 3 KNOWN` tally. The ONLINE / OFFLINE toggles and the search (name, known-as name, line of work, blurb, location, acquaintance) are shared with the buddies. With `error` it reads `NO SIGNAL` over the reason; with `cached`, `CACHED · <ago>`.
+- **A contact.** The head, `[ VIEW PROFILE ]` when their profile is viewable, then ┤WHAT YOU KNOW├: what you learned, grouped by field (`LOVES`, `LIKES`), each value with where it came from (*they told you*, *from a gift*, *from a delivery*), and ┤YOUR NOTES (n)├: `[ ADD NOTE ]`, each note with when it was written (and edited), `[ EDIT ]` (an inline editor; Ctrl+Enter saves, Esc cancels) and `[ DELETE ]` (asks first). Notes are at most 200 characters (the editor stops there, and the game refuses longer). An empty or unchanged note is not sent. A `Spacebook.Contact` from the game (after a note change, or when a detail fills in) replaces that contact live, in the list, the open view and an open profile, without closing an editor. Under `error` or `cached` the notes stay readable and every note button is hidden.
+- **Profiles** of anyone but you carry the same two blocks, from `Spacebook.Profile`'s `learned` and `notes` (buttons hidden while the book is cached or has no signal).
+- **Row menu.** Right-click a buddy row, or click its ▸: **View profile**, **Notes** (the contact view), **Page** fills `page <name> ` in the input (not for the dead); **Remove buddy** asks first, then removes.
 - **Requests.** The tab carries the number of pending requests. A new request toasts once (a mention, on the device playing effects); the keys already announced are kept per world in synced storage, so a second device or a reload does not repeat them.
 - **Empty states.** `WAITING FOR SPACEBOOK` (with `[ REFRESH ]`) before the first list, `NO BUDDIES YET` with an empty book, `NO BUDDY MATCHES` when the filters or the search leave nothing. When the server says there is no live book (`error`), the body reads `NO SIGNAL` over the server's sentence, kept verbatim ("Your wristpad has no signal here. PDAs only work in character.", "No wristpad.", …), and every mutation is hidden: no `[ ADD ]`, no foot. When the list is the pad's last sync (`cached`), a dim `CACHED · 12 min ago` note sits under the bar; the buttons stay, and the game tells you in text when a NetSat carrier is missing.
 - **Refresh.** `[ REFRESH ]` at the right of the bar sends `Spacebook.Get` at once and re-declares the `Spacebook` package (see below).
@@ -68,6 +88,14 @@ Torchship sends the whole book, and resends it after every change (on login, on 
 | in | `Spacebook.Profile` | a card plus `{ shares_friends, friends_visible, friends_hidden, friends: [card], introducer }`, or `{ key, name, error }`. A card is `{ key, name, role, status, portrait, acquaintance, buddy, viewable, blurb, location }`; `blurb` is empty unless `viewable`, `location` unless `buddy` |
 | out | `Spacebook.Search` | `{ term }` |
 | in | `Spacebook.Results` | `{ term, results: [card] }`: public profiles only |
+| out | `Spacebook.GetContacts` | `{}` — asks for the contacts; works off-net (answered from the pad's last sync with `cached`, or with `error`) |
+| in | `Spacebook.Contacts` | `{ contacts: [contact], cached?, error? }`: buddies first, then everyone you know by name who is on Spacebook. A contact is a card plus `{ known_as, learned: [learned], notes: [note] }`; `name` is what you know them as (a buddy's legal name), `key` the contact key the note messages take |
+| in | `Spacebook.Contact` | one `contact`, pushed after a note change and when a detail is learned; replaces the contact with the same `key` |
+| out | `Spacebook.AddNote` | `{ key, text }`, at most 200 characters |
+| out | `Spacebook.EditNote` | `{ key, id, text }` (`id` an integer) |
+| out | `Spacebook.DeleteNote` | `{ key, id }` |
+
+`learned` is `{ field: "loves" | "likes", label, id, value, source: "told" | "gift" | "delivery", time }` (`label` the field's display label, `value` what it is); `note` is `{ id, text, time, edited }` (unix seconds, `edited` 0 when never). `Spacebook.Profile` carries `learned` and `notes` too (empty for yourself). The note messages need a NetSat carrier; refusals come as game text.
 
 The manifest declares `Spacebook 1` (`contributes.gmcp`), so the client lists it in `Core.Supports` while the extension is enabled (and the extension re-declares it at runtime, see above), and the host checks each inbound list against `schema/list.json`. Errors from the game arrive as ordinary text.
 
@@ -80,14 +108,14 @@ The manifest declares `Spacebook 1` (`contributes.gmcp`), so the client lists it
 Synced world storage: `seen.pending` (the pending keys already announced, the last 500).
 
 ## For other extensions
-`await ctx.api('spacebook')` gives `{ list(sid?), refresh(sid?), openProfile({ key? , name? }, sid?) }`: the last list of a session (a copy, or `null`; it carries `error` / `cached` when the server sent them), a `Spacebook.Get` plus a re-declaration of the package, and opening someone's profile in the panel. Context menus can target the registered kind `spacebook.buddy` (`{ buddy: record }`): `mu.menus.context({ target: 'spacebook.buddy', … })` adds an entry to every buddy row.
+`await ctx.api('spacebook')` gives `{ list(sid?), refresh(sid?), openProfile({ key? , name? }, sid?), contacts(sid?), openContact({ key, name? }, sid?) }`: the last list of a session (a copy, or `null`; it carries `error` / `cached` when the server sent them), a `Spacebook.Get` plus a re-declaration of the package, opening someone's profile in the panel, the last contacts (a copy with the live updates, or `null`), and opening a contact's view (asking for the contacts when none are held). Context menus can target the registered kind `spacebook.buddy` (`{ buddy: record }`): `mu.menus.context({ target: 'spacebook.buddy', … })` adds an entry to every buddy row.
 
 ## Developing
 ```
 npm install
 npm run dev        # serves src/ on :5199 for ?ext-dev=http://localhost:5199/
 npm run build      # dist/index.js + manifest check
-npm test           # the headless host: list, filters, actions, menu, requests, sessions, style
+npm test           # the headless host: list, filters, actions, menu, requests, sessions, contacts, notes, style
 ```
 
 Made with `npm create @runmu.sh/extension`.

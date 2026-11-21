@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spacebook.Contact",
+  "$comment": "One contact, pushed after a note change and when a detail is learned; replaces the contact with the same key.",
+  "type": "object",
+  "required": [
+    "key",
+    "name"
+  ],
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "portrait": {
+      "type": "string"
+    },
+    "acquaintance": {
+      "type": "string"
+    },
+    "blurb": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "buddy": {
+      "type": "boolean"
+    },
+    "viewable": {
+      "type": "boolean"
+    },
+    "known_as": {
+      "type": "string",
+      "$comment": "What the viewer knows them as; a buddy's legal name."
+    },
+    "learned": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/learned"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/note"
+      }
+    }
+  },
+  "$defs": {
+    "learned": {
+      "type": "object",
+      "required": [
+        "field",
+        "value"
+      ],
+      "$comment": "A detail the viewer learned (today: what an NPC likes or loves).",
+      "properties": {
+        "field": {
+          "type": "string",
+          "$comment": "\"loves\" or \"likes\""
+        },
+        "label": {
+          "type": "string",
+          "$comment": "The field's display label (\"Loves\")."
+        },
+        "id": {
+          "type": "string",
+          "$comment": "The preference id."
+        },
+        "value": {
+          "type": "string",
+          "$comment": "The preference label (\"real-grain whisky\")."
+        },
+        "source": {
+          "type": "string",
+          "$comment": "told | gift | delivery"
+        },
+        "time": {
+          "type": "integer"
+        }
+      }
+    },
+    "note": {
+      "type": "object",
+      "required": [
+        "id",
+        "text"
+      ],
+      "$comment": "One of the viewer's private notes.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "$comment": "Unique per viewer, never reused."
+        },
+        "text": {
+          "type": "string"
+        },
+        "time": {
+          "type": "integer"
+        },
+        "edited": {
+          "type": "integer",
+          "$comment": "0 = never edited."
+        }
+      }
+    }
+  }
+}

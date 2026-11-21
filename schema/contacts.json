@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spacebook.Contacts",
+  "$comment": "The answer to Spacebook.GetContacts: buddies first, then everyone the viewer knows by name who is on Spacebook. With `error` there are none; with `cached` it is the pad's last sync.",
+  "type": "object",
+  "required": [
+    "contacts"
+  ],
+  "properties": {
+    "contacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/contact"
+      }
+    },
+    "error": {
+      "type": "string"
+    },
+    "cached": {
+      "type": "integer",
+      "$comment": "Unix seconds of the pad's last sync."
+    }
+  },
+  "$defs": {
+    "contact": {
+      "type": "object",
+      "required": [
+        "key",
+        "name"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "portrait": {
+          "type": "string"
+        },
+        "acquaintance": {
+          "type": "string"
+        },
+        "blurb": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "buddy": {
+          "type": "boolean"
+        },
+        "viewable": {
+          "type": "boolean"
+        },
+        "known_as": {
+          "type": "string",
+          "$comment": "What the viewer knows them as; a buddy's legal name."
+        },
+        "learned": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/learned"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/note"
+          }
+        }
+      }
+    },
+    "learned": {
+      "type": "object",
+      "required": [
+        "field",
+        "value"
+      ],
+      "$comment": "A detail the viewer learned (today: what an NPC likes or loves).",
+      "properties": {
+        "field": {
+          "type": "string",
+          "$comment": "\"loves\" or \"likes\""
+        },
+        "label": {
+          "type": "string",
+          "$comment": "The field's display label (\"Loves\")."
+        },
+        "id": {
+          "type": "string",
+          "$comment": "The preference id."
+        },
+        "value": {
+          "type": "string",
+          "$comment": "The preference label (\"real-grain whisky\")."
+        },
+        "source": {
+          "type": "string",
+          "$comment": "told | gift | delivery"
+        },
+        "time": {
+          "type": "integer"
+        }
+      }
+    },
+    "note": {
+      "type": "object",
+      "required": [
+        "id",
+        "text"
+      ],
+      "$comment": "One of the viewer's private notes.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "$comment": "Unique per viewer, never reused."
+        },
+        "text": {
+          "type": "string"
+        },
+        "time": {
+          "type": "integer"
+        },
+        "edited": {
+          "type": "integer",
+          "$comment": "0 = never edited."
+        }
+      }
+    }
+  }
+}

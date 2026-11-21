@@ -1,0 +1,16 @@
+{
+  "$comment": "Spacebook.DeleteNote: remove note `id` from a contact.",
+  "type": "object",
+  "required": [
+    "key",
+    "id"
+  ],
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "id": {
+      "type": "integer"
+    }
+  }
+}

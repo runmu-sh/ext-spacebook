@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- **Contacts.** `BUDDIES │ CONTACTS` tabs over the bar. CONTACTS sends `Spacebook.GetContacts {}` when opened and on its `[ REFRESH ]`, and lists `Spacebook.Contacts`: your buddies, then everyone you know by name who is on Spacebook, each under the name you know them by, with a `2 NOTES · 3 KNOWN` tally. The ONLINE / OFFLINE filters and the search are shared. `error` reads `NO SIGNAL` over the reason, `cached` shows `CACHED · <ago>`.
+- **A contact's view.** Click a contact (or **Notes**, new on a buddy's row menu): the head, `[ VIEW PROFILE ]` only when viewable, ┤WHAT YOU KNOW├ (learned likes and loves grouped by field, each with *they told you* / *from a gift* / *from a delivery*), and ┤YOUR NOTES├ with `[ ADD NOTE ]` and, per note, `[ EDIT ]` (inline editor, Ctrl+Enter / Esc) and `[ DELETE ]` (confirmed): `Spacebook.AddNote {key, text}`, `EditNote {key, id, text}`, `DeleteNote {key, id}`. Notes are clamped at 200 characters; empty or unchanged ones are not sent. Every note button is hidden under `error` or `cached`.
+- **Live.** `Spacebook.Contact` replaces one contact by key in the held contacts, the open view and any open profile of that key (an open editor keeps its text and focus).
+- **Profiles** of others show the same two blocks from `Spacebook.Profile`'s new `learned` and `notes`.
+- New schemas `contacts.json`, `contact.json`, `addnote.json`, `editnote.json`, `deletenote.json`; `profile.json` knows `learned` and `notes`. Types `SpacebookContact`, `SpacebookContacts`, `SpacebookLearned`, `SpacebookNote`, `NOTE_MAX`; exports `contactOf`, `contactsOf`, `learnedOf`, `noteOf`, `groupLearned`, `filterContacts`, `clampNote`, `renderIntel`, `renderContact`; `api.contacts(sid?)` and `api.openContact({key, name?}, sid?)`.
+
 ## 1.2.0
 
 - **Asks, not only waits.** While a connected session holds no list the extension sends `Spacebook.Get {}` on a bounded backoff: ~2 s after connecting (the server's own login push gets a chance), then 6 s, 15 s, 40 s, then every 90 s while still waiting. It stops the moment a list arrives, the link leaves `connected` or the session ends; it restarts on every `connected` and when a MUD reconnect clears the GMCP state (which also drops the held list). Nothing is sent before GMCP is negotiated. `WAITING FOR SPACEBOOK` is no longer forever.

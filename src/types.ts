@@ -53,6 +53,54 @@ export interface SpacebookCard {
   location: string;
 }
 
+/** Where a learned detail came from: the NPC said so, a plain gift, or a hand-over in a gig. @since 1.3.0 */
+export type SpacebookLearnSource = 'told' | 'gift' | 'delivery';
+
+/** One detail the viewer learned about someone (today: what an NPC likes or loves). @since 1.3.0 */
+export interface SpacebookLearned {
+  /** `"loves"` or `"likes"` (the server's `.learn_fields` ids). */
+  field: string;
+  /** The field's display label ("Loves", "Likes"). */
+  label: string;
+  /** The preference id. */
+  id: string;
+  /** What it is ("real-grain whisky", "a cold beer"). */
+  value: string;
+  /** `told`, `gift` or `delivery`; '' for anything else. */
+  source: SpacebookLearnSource | '';
+  /** Unix seconds when it was learned (or last confirmed). */
+  time: number;
+}
+
+/** One of the viewer's private notes on someone. @since 1.3.0 */
+export interface SpacebookNote {
+  /** Unique per viewer, never reused: what `EditNote` and `DeleteNote` take. */
+  id: number;
+  text: string;
+  /** Unix seconds when written. */
+  time: number;
+  /** Unix seconds of the last edit; 0 = never. */
+  edited: number;
+}
+
+/**
+ * Someone the viewer knows: a buddy, or anyone they know by name who is on Spacebook. `name` is what the viewer
+ * knows them as (a buddy's legal name). One entry of `Spacebook.Contacts`, and the whole of `Spacebook.Contact`.
+ * @since 1.3.0
+ */
+export interface SpacebookContact extends SpacebookCard {
+  known_as: string;
+  learned: SpacebookLearned[];
+  notes: SpacebookNote[];
+}
+
+/** A normalised `Spacebook.Contacts`, the answer to `Spacebook.GetContacts`. `error` / `cached` as in the list. @since 1.3.0 */
+export interface SpacebookContacts {
+  contacts: SpacebookContact[];
+  error?: string;
+  cached?: number;
+}
+
 /** `Spacebook.Profile`, the answer to `Spacebook.GetProfile`. */
 export interface SpacebookProfile extends SpacebookCard {
   shares_friends: boolean;
@@ -62,6 +110,10 @@ export interface SpacebookProfile extends SpacebookCard {
   /** Who they are friends with; for an NPC (`introducer`) only the people it could introduce the viewer to. */
   friends: SpacebookCard[];
   introducer: boolean;
+  /** What the viewer learned about them; empty for yourself. @since 1.3.0 */
+  learned: SpacebookLearned[];
+  /** The viewer's own notes on them; empty for yourself. @since 1.3.0 */
+  notes: SpacebookNote[];
 }
 
 /** `Spacebook.Profile` when the person cannot be found or their profile is private. */
@@ -84,9 +136,13 @@ export interface SpacebookList {
   cached?: number;
 }
 
-/** What the panel shows: your book, someone's profile (null while it loads), or search results (null while they load). */
+/**
+ * What the panel shows: your book, someone's profile (null while it loads), search results (null while they load),
+ * or a contact by key (drawn from the held contacts, so `Spacebook.Contact` updates it live; @since 1.3.0).
+ */
 export type SpacebookView =
   | { kind: 'book' }
+  | { kind: 'contact'; key: string; name: string }
   | { kind: 'profile'; key: string; name: string; profile: SpacebookProfile | SpacebookProfileError | null }
   | { kind: 'search'; term: string; results: SpacebookCard[] | null };
 
@@ -108,6 +164,10 @@ export interface SpacebookApi {
   refresh(sid?: string): Promise<boolean>;
   /** Open someone's profile in the panel (`Spacebook.GetProfile` by key, or by name). @since 1.1.0 */
   openProfile(who: { key?: string; name?: string }, sid?: string): void;
+  /** The last `Spacebook.Contacts` of a session (a copy, with live `Spacebook.Contact` updates), or null. @since 1.3.0 */
+  contacts(sid?: string): SpacebookContacts | null;
+  /** Open a contact's view (what you know, your notes) in the panel; asks for the contacts when none are held. @since 1.3.0 */
+  openContact(who: { key: string; name?: string }, sid?: string): void;
 }
 
 /** The ONLINE / OFFLINE filter settings (`ext.spacebook.<key>`, per world). */
@@ -116,3 +176,5 @@ export const SETTINGS = { online: 'filter.online', offline: 'filter.offline' } a
 export const BUDDY_KIND = 'spacebook.buddy';
 /** The server refuses a blurb of 50 characters or more. */
 export const BLURB_MAX = 49;
+/** The server refuses a note longer than 200 characters (`$spacebook_fo.note_len`). @since 1.3.0 */
+export const NOTE_MAX = 200;

@@ -23,15 +23,23 @@
  * withdraw the package. A MUD reconnect clears the GMCP state (the watch delivers `undefined`), which drops the
  * held list and restarts the schedule; `state: connected` restarts it too; leaving `connected` stops it.
  *
+ * Contacts and notes (1.3.0): a BUDDIES | CONTACTS tab row over the bar. CONTACTS sends `Spacebook.GetContacts {}`
+ * (on opening it and on its REFRESH) and lists `Spacebook.Contacts` (everyone you know by name on Spacebook, buddies
+ * first) through the same filters and search. A contact (or **Notes** on a buddy's menu) opens a contact view: the
+ * head, [ VIEW PROFILE ] when viewable, ┤WHAT YOU KNOW├ (learned likes and loves, with where they came from) and
+ * ┤YOUR NOTES├ with [ ADD NOTE ], and per note EDIT (inline) and DELETE (confirmed): `Spacebook.AddNote`, `EditNote`,
+ * `DeleteNote`. `Spacebook.Contact` replaces one contact by key, live, in the list, the view and open profiles. A
+ * buddy's profile shows the same two blocks. Every note button is hidden under `error` or `cached`.
+ *
  * Shown 'auto': the panel joins Views and adds itself the first time a session receives a list. Activation is
  * `onGmcp:Spacebook`, so on a game that never sends the package the extension stays dormant.
  */
 import { defineExtension, h, type Dispose, type JsonSchema, type Mu, type PanelMountCtx } from '@muclient/sdk';
 import { COPY } from './copy';
-import { BLURB_MAX, BUDDY_KIND, SETTINGS, type SpacebookApi, type SpacebookCard, type SpacebookList, type SpacebookProfile, type SpacebookProfileError, type SpacebookRecord, type SpacebookStatus, type SpacebookView } from './types';
+import { BLURB_MAX, BUDDY_KIND, NOTE_MAX, SETTINGS, type SpacebookApi, type SpacebookCard, type SpacebookContact, type SpacebookContacts, type SpacebookLearned, type SpacebookList, type SpacebookNote, type SpacebookProfile, type SpacebookProfileError, type SpacebookRecord, type SpacebookStatus, type SpacebookView } from './types';
 
-export type { SpacebookApi, SpacebookBuddyData, SpacebookCard, SpacebookList, SpacebookProfile, SpacebookProfileError, SpacebookRecord, SpacebookResults, SpacebookSelf, SpacebookStatus, SpacebookView } from './types';
-export { BLURB_MAX, BUDDY_KIND, SETTINGS } from './types';
+export type { SpacebookApi, SpacebookBuddyData, SpacebookCard, SpacebookContact, SpacebookContacts, SpacebookLearned, SpacebookLearnSource, SpacebookList, SpacebookNote, SpacebookProfile, SpacebookProfileError, SpacebookRecord, SpacebookResults, SpacebookSelf, SpacebookStatus, SpacebookView } from './types';
+export { BLURB_MAX, BUDDY_KIND, NOTE_MAX, SETTINGS } from './types';
 export { COPY } from './copy';
 
 const ID = 'spacebook';
@@ -131,6 +139,27 @@ ${R} .row.head::before { display: none; }
 ${R} .l2 .role { color: var(--accent-bright); text-transform: lowercase; }
 ${R} .scroll > .acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 0 6px 2.4ch; border-bottom: 1px solid var(--border); }
 ${R} .vtitle { flex: 1; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+${R} .modes { display: flex; background: var(--bg-elev); border-bottom: 1px solid var(--border); }
+${R} .mode { position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 28px; padding: 0 13px; background: none; border: 0; border-right: 1px solid var(--border); color: var(--fg-dim); font: inherit; font-size: .68rem; letter-spacing: .15em; text-transform: uppercase; cursor: pointer; transition: color .12s ease, background-color .12s ease; }
+${R} .mode:hover { background: var(--tint-hover); }
+${R} .mode[aria-selected="true"] { color: var(--accent-bright); background: var(--bg); }
+${R} .mode[aria-selected="true"]::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--accent); }
+${R} .mode:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+${R} .tally { margin-left: auto; font-size: .6rem; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-faint); white-space: nowrap; }
+${R} .know { display: grid; grid-template-columns: max-content 1fr; gap: 3px 1.5ch; padding: 2px 0 6px 2.4ch; font-size: .8rem; }
+${R} .know .fl { font-size: .64rem; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-faint); padding-top: .15em; }
+${R} .know .vals { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+${R} .know .val { color: var(--fg); overflow-wrap: anywhere; }
+${R} .know .src { margin-left: 1ch; font-size: .7rem; color: var(--fg-faint); }
+${R} .nacts { display: flex; gap: 6px; padding: 0 0 4px 2.4ch; }
+${R} .nt { display: flex; flex-direction: column; gap: 3px; padding: 6px 0 6px 2.4ch; border-bottom: 1px solid var(--border); }
+${R} .nt .tx { font-size: .8rem; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+${R} .nt .mt { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-faint); }
+${R} .nt .mt .when { flex: 1; min-width: 0; }
+${R} .ed { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 6px 2.4ch; border-bottom: 1px solid var(--border); }
+${R} .ed textarea { width: 100%; min-height: 4.5em; resize: vertical; font-family: var(--font-mono); }
+${R} .ed .ln { display: flex; align-items: center; gap: 6px; }
+${R} .ed .len { flex: 1; font-size: .62rem; letter-spacing: .1em; color: var(--fg-faint); }
 `;
 
 // ─── the list ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -157,6 +186,64 @@ export function cardOf(v: unknown): SpacebookCard | null {
 }
 
 const cardsOf = (v: unknown) => (Array.isArray(v) ? v.map(cardOf).filter((c): c is SpacebookCard => !!c) : []);
+const intOf = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : 0);
+const SOURCES = ['told', 'gift', 'delivery'] as const;
+
+/** A learned detail as the server sends it → a complete one. Null without a value. Exported for tests. @since 1.3.0 */
+export function learnedOf(v: unknown): SpacebookLearned | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const d = v as Record<string, unknown>;
+  const value = str(d.value).trim(), field = str(d.field).trim();
+  if (!value) return null;
+  const src = str(d.source).trim().toLowerCase();
+  const label = str(d.label).trim() || (field ? field[0]!.toUpperCase() + field.slice(1) : '');
+  return { field, label, id: str(d.id), value, source: (SOURCES as readonly string[]).includes(src) ? src as SpacebookLearned['source'] : '', time: intOf(d.time) };
+}
+
+/** A note as the server sends it → a complete one. Null without an integer id. Exported for tests. @since 1.3.0 */
+export function noteOf(v: unknown): SpacebookNote | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const d = v as Record<string, unknown>;
+  if (typeof d.id !== 'number' || !Number.isInteger(d.id)) return null;
+  return { id: d.id, text: str(d.text), time: intOf(d.time), edited: intOf(d.edited) };
+}
+
+const learnedListOf = (v: unknown) => (Array.isArray(v) ? v.map(learnedOf).filter((x): x is SpacebookLearned => !!x) : []);
+const notesOf = (v: unknown) => (Array.isArray(v) ? v.map(noteOf).filter((x): x is SpacebookNote => !!x) : []);
+
+/** A contact (one of `Spacebook.Contacts`, or `Spacebook.Contact`) → a complete one. Null without a key and a name. @since 1.3.0 */
+export function contactOf(v: unknown): SpacebookContact | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const d = v as Record<string, unknown>;
+  const known = str(d.known_as).trim();
+  const c = cardOf(str(d.name).trim() ? d : { ...d, name: known });
+  if (!c) return null;
+  return { ...c, known_as: known || c.name, learned: learnedListOf(d.learned), notes: notesOf(d.notes) };
+}
+
+/** A `Spacebook.Contacts` payload → the contacts (with `error` / `cached` as in the list), or null. Exported for tests. @since 1.3.0 */
+export function contactsOf(data: unknown): SpacebookContacts | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const d = data as Record<string, unknown>;
+  const out: SpacebookContacts = { contacts: Array.isArray(d.contacts) ? d.contacts.map(contactOf).filter((c): c is SpacebookContact => !!c) : [] };
+  const error = str(d.error).trim();
+  if (error) out.error = error;
+  if (typeof d.cached === 'number' && Number.isFinite(d.cached) && d.cached > 0) out.cached = Math.floor(d.cached);
+  return out;
+}
+
+/** Learned details grouped by their field label, in the server's order ("Loves" before "Likes"). Exported for tests. @since 1.3.0 */
+export function groupLearned(list: SpacebookLearned[]): { label: string; items: SpacebookLearned[] }[] {
+  const out: { label: string; items: SpacebookLearned[] }[] = [];
+  for (const l of list) {
+    const g = out.find((x) => x.label === l.label);
+    if (g) g.items.push(l); else out.push({ label: l.label, items: [l] });
+  }
+  return out;
+}
+
+/** A note the server accepts: trimmed, at most {@link NOTE_MAX} characters. @since 1.3.0 */
+export const clampNote = (s: string) => [...s.trim()].slice(0, NOTE_MAX).join('');
 
 /** A `Spacebook.Profile` payload → a profile, an error (`{key, name, error}`), or null when it is neither. Exported for tests. */
 export function profileOf(data: unknown): SpacebookProfile | SpacebookProfileError | null {
@@ -166,7 +253,7 @@ export function profileOf(data: unknown): SpacebookProfile | SpacebookProfileErr
   const c = cardOf(d);
   if (!c) return null;
   const visible = d.friends_visible === true;
-  return { ...c, shares_friends: d.shares_friends === true, friends_visible: visible, friends_hidden: visible ? '' : str(d.friends_hidden).trim(), friends: visible ? cardsOf(d.friends) : [], introducer: d.introducer === true };
+  return { ...c, shares_friends: d.shares_friends === true, friends_visible: visible, friends_hidden: visible ? '' : str(d.friends_hidden).trim(), friends: visible ? cardsOf(d.friends) : [], introducer: d.introducer === true, learned: learnedListOf(d.learned), notes: notesOf(d.notes) };
 }
 
 /** A `Spacebook.Results` payload → the term and its cards, or null. Exported for tests. */
@@ -204,6 +291,14 @@ export interface Filter { online: boolean; offline: boolean; query: string }
 /** Online first, then by name (case-insensitive). Exported for tests. */
 export const sortBuddies = (list: SpacebookRecord[]): SpacebookRecord[] =>
   [...list].sort((a, b) => Number(b.status === 'online') - Number(a.status === 'online') || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+/** Contacts through the same toggles and search (also over the name you know them by and their role), in the server's order (buddies first). @since 1.3.0 */
+export function filterContacts(list: SpacebookContact[], f: Filter): SpacebookContact[] {
+  const q = f.query.trim().toLowerCase();
+  return list.filter((c) => {
+    if (c.status === 'online' ? !f.online : !f.offline) return false;
+    return !q || [c.name, c.known_as, c.role, c.blurb, c.location, c.acquaintance].some((s) => s.toLowerCase().includes(q));
+  });
+}
 /** The ONLINE / OFFLINE toggles (deceased and unknown count as offline) and the search over name, blurb, location and acquaintance. */
 export function filterBuddies(list: SpacebookRecord[], f: Filter): SpacebookRecord[] {
   const q = f.query.trim().toLowerCase();
@@ -242,33 +337,82 @@ export interface PanelHost {
   target(el: HTMLElement, buddy: SpacebookRecord): Dispose;
   /** Open the row's menu from its ▸ (a synthetic contextmenu at the row). */
   openMenu(el: HTMLElement): void;
+  /** Which list the panel shows (1.3.0): your buddies, or your contacts. */
+  mode(): 'buddies' | 'contacts';
+  /** Switch lists; CONTACTS asks for them (`Spacebook.GetContacts`). */
+  setMode(m: 'buddies' | 'contacts'): void;
+  /** The session's last `Spacebook.Contacts`, with live `Spacebook.Contact` updates; null before the first. */
+  contacts(): SpacebookContacts | null;
+  /** Open a contact's view. */
+  openContact(who: { key: string; name: string }): void;
+  /** The note being written or edited, if any (one at a time per panel). */
+  editing(): NoteEdit | null;
+  /** Open the inline editor: a new note (`id` null) or note `id`, prefilled with `text`. */
+  editNote(key: string, id: number | null, text: string): void;
+  /** The editor's text changed (no redraw). */
+  typed(text: string): void;
+  /** Close the editor without sending. */
+  cancelEdit(): void;
+  /** Send the editor's note (`AddNote` / `EditNote`), unless empty or unchanged; closes the editor. */
+  saveEdit(): void;
+  /** Ask, then send `Spacebook.DeleteNote`. */
+  deleteNote(key: string, note: SpacebookNote): void;
 }
+
+/** The inline note editor's state: whose note, which (null = a new one), the text so far and what it was. */
+export interface NoteEdit { key: string; id: number | null; text: string; was: string }
 
 /**
  * The panel's DOM for one state. Exported for tests. `query` is the live search text. `note` is the CACHED line under
  * the bar (null when the list is live); without a list or with `error` nothing can be changed, so ADD and the foot go.
  */
-export function renderPanel(hostApi: PanelHost, query: string): { bar: HTMLElement; note: HTMLElement | null; body: HTMLElement[]; foot: HTMLElement | null; targets: Dispose[] } {
+export function renderPanel(hostApi: PanelHost, query: string): { modes: HTMLElement; bar: HTMLElement; note: HTMLElement | null; body: HTMLElement[]; foot: HTMLElement | null; targets: Dispose[] } {
   const css = hostApi.css;
   const list = hostApi.list();
   const f = hostApi.filter();
+  const mode = hostApi.mode();
   const targets: Dispose[] = [];
   const toggle = (which: 'online' | 'offline', label: string, on: boolean) =>
     h('button', { class: `${css.toggle}${on ? '' : ` ${css.off}`}`, type: 'button', 'aria-pressed': String(on), 'data-testid': `sb-filter-${which}`, onclick: () => hostApi.setFilter(which, !on) }, label);
-  const canChange = !!list && !list.error;
+  const canChange = mode === 'buddies' && !!list && !list.error;
   const refresh = h('button', { class: `${css.cmd} refresh`, type: 'button', 'data-testid': 'sb-refresh', title: COPY.refresh, onclick: () => hostApi.refresh() }, COPY.refresh);
+  const placeholder = mode === 'contacts' ? COPY.searchContacts : COPY.search;
   const bar = h('div', { class: 'bar' },
     toggle('online', COPY.online, f.online),
     toggle('offline', COPY.offline, f.offline),
-    h('input', { class: css.field, type: 'search', name: 'query', value: query, placeholder: COPY.search, 'aria-label': COPY.search, 'data-testid': 'sb-search', autocomplete: 'off' }),
+    h('input', { class: css.field, type: 'search', name: 'query', value: query, placeholder, 'aria-label': placeholder, 'data-testid': 'sb-search', autocomplete: 'off' }),
     canChange ? h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-add', onclick: () => hostApi.add() }, COPY.add) : null,
     refresh,
   );
+  const tab = (m: 'buddies' | 'contacts', label: string) =>
+    h('button', { class: 'mode', type: 'button', role: 'tab', 'aria-selected': String(mode === m), 'data-testid': `sb-mode-${m}`, onclick: () => { if (mode !== m) hostApi.setMode(m); } }, label);
+  const modes = h('div', { class: 'modes', role: 'tablist', 'aria-label': COPY.title }, tab('buddies', COPY.modeBuddies), tab('contacts', COPY.modeContacts));
   const head = (label: string, n: number) => secHead(css, label, n);
-  if (!list) return { bar, note: null, body: [h('p', { class: `${css.empty} awaiting`, 'data-testid': 'sb-empty' }, COPY.awaiting)], foot: null, targets };
-  const note = list.cached ? h('p', { class: 'note', 'data-testid': 'sb-cached' }, COPY.cached(agoOf(list.cached))) : null;
+  const reason = (why: string) => h('div', { class: 'reason', 'data-testid': 'sb-empty', role: 'status' }, h('span', { class: 'lbl' }, COPY.noSignal), h('span', { class: 'why', 'data-testid': 'sb-reason' }, why));
+  const cachedNote = (t?: number) => (t ? h('p', { class: 'note', 'data-testid': 'sb-cached' }, COPY.cached(agoOf(t))) : null);
+
+  if (mode === 'contacts') {
+    const cs = hostApi.contacts();
+    if (!cs) return { modes, bar, note: null, body: [note(css, COPY.loading)], foot: null, targets };
+    if (cs.error) return { modes, bar, note: cachedNote(cs.cached), body: [reason(cs.error)], foot: null, targets };
+    const body: HTMLElement[] = [head(COPY.contacts, cs.contacts.length)];
+    const shown = filterContacts(cs.contacts, { ...f, query });
+    if (!cs.contacts.length) body.push(note(css, COPY.noContacts));
+    else if (!shown.length) body.push(note(css, COPY.noContactMatch));
+    for (const c of shown) {
+      const row = cardRow(css, { ...c, name: c.known_as || c.name }, { testid: 'sb-contact', title: COPY.openContact });
+      const t = COPY.tally(c.notes.length, c.learned.length);
+      if (t) row.querySelector('.l1')!.append(h('span', { class: 'tally', 'data-testid': 'sb-tally' }, t));
+      row.addEventListener('click', () => hostApi.openContact({ key: c.key, name: c.known_as || c.name }));
+      body.push(row);
+    }
+    return { modes, bar, note: cachedNote(cs.cached), body, foot: null, targets };
+  }
+
+  if (!list) return { modes, bar, note: null, body: [h('p', { class: `${css.empty} awaiting`, 'data-testid': 'sb-empty' }, COPY.awaiting)], foot: null, targets };
+  const cnote = cachedNote(list.cached);
   // The server's reason there is no book: the label line, then its text verbatim. Nothing else to draw.
-  if (list.error) return { bar, note, body: [h('div', { class: 'reason', 'data-testid': 'sb-empty', role: 'status' }, h('span', { class: 'lbl' }, COPY.noSignal), h('span', { class: 'why', 'data-testid': 'sb-reason' }, list.error))], foot: null, targets };
+  if (list.error) return { modes, bar, note: cnote, body: [reason(list.error)], foot: null, targets };
 
   const body: HTMLElement[] = [];
   if (list.pending.length) {
@@ -301,7 +445,7 @@ export function renderPanel(hostApi: PanelHost, query: string): { bar: HTMLEleme
       h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-public-toggle', onclick: () => hostApi.setPublic(!you.public) }, you.public ? COPY.goPrivate : COPY.goPublic),
       h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-share-toggle', 'aria-pressed': String(you.share_friends), onclick: () => hostApi.setShareFriends(!you.share_friends) }, you.share_friends ? COPY.hideFriends : COPY.shareFriends),
       h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-search-profiles', onclick: () => hostApi.searchProfiles() }, COPY.searchProfiles)));
-  return { bar, note, body, foot, targets };
+  return { modes, bar, note: cnote, body, foot, targets };
 }
 
 /** A person as a row: portrait, name + status plate (+ role), "acquaintance · location", blurb. Buddy rows, friends and results share it. */
@@ -358,12 +502,83 @@ export function renderProfile(hostApi: PanelHost, view: Extract<SpacebookView, {
   else if (p.buddy) acts.append(h('span', { class: `${css.plate} ${css.ok}`, 'data-testid': 'sb-is-buddy' }, COPY.isBuddy), h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-page', onclick: () => hostApi.page(p.name) }, COPY.page));
   else acts.append(h('button', { class: `${css.cmd} primary`, type: 'button', 'data-testid': 'sb-add-buddy', onclick: () => hostApi.addBuddy(p.name) }, COPY.addBuddy));
   body.push(acts);
+  // What you know and your notes (1.3.0), for anyone but yourself; changes only while the book is live.
+  if (!self) { const l = hostApi.list(); body.push(...renderIntel(hostApi, p.key, p.learned, p.notes, !!l && !l.error && !l.cached)); }
   const label = p.introducer ? COPY.introduces : COPY.friends;
   if (!p.friends_visible) { body.push(secHead(css, label), note(css, p.friends_hidden, 'sb-friends-hidden')); return { bar: viewBar(hostApi, p.name), body }; }
   body.push(secHead(css, label, p.friends.length));
   if (!p.friends.length) body.push(note(css, p.introducer ? COPY.noIntroductions : COPY.noFriends));
   body.push(...cardRows(hostApi, p.friends, 'sb-friend'));
   return { bar: viewBar(hostApi, p.name), body };
+}
+
+/**
+ * ┤WHAT YOU KNOW├ (learned details grouped by field: "LOVES  real-grain whisky  they told you") and ┤YOUR NOTES (n)├
+ * with [ ADD NOTE ], each note's text, when, and [ EDIT ] [ DELETE ], or the inline editor. `canChange` false (no
+ * signal, or the pad's cached copy) leaves the notes readable and drops every button. Exported for tests. @since 1.3.0
+ */
+export function renderIntel(hostApi: PanelHost, key: string, learned: SpacebookLearned[], notes: SpacebookNote[], canChange: boolean): HTMLElement[] {
+  const css = hostApi.css;
+  const out: HTMLElement[] = [secHead(css, COPY.whatYouKnow)];
+  if (!learned.length) out.push(note(css, COPY.knowNothing, 'sb-know-empty'));
+  else {
+    const grid = h('div', { class: 'know', 'data-testid': 'sb-know' });
+    for (const g of groupLearned(learned)) {
+      grid.append(h('span', { class: 'fl', 'data-testid': 'sb-know-field' }, g.label),
+        h('div', { class: 'vals' }, ...g.items.map((l) => h('div', { class: 'val', 'data-testid': 'sb-know-value' }, l.value,
+          l.source ? h('span', { class: 'src', 'data-testid': 'sb-know-source' }, COPY.source[l.source] ?? '') : null))));
+    }
+    out.push(grid);
+  }
+  out.push(secHead(css, COPY.yourNotes, notes.length));
+  const ed = canChange ? hostApi.editing() : null;
+  const mine = ed && ed.key === key ? ed : null;
+  const editor = (e: NoteEdit) => {
+    const ta = h('textarea', { class: css.field, name: 'note', rows: '3', maxlength: String(NOTE_MAX), placeholder: COPY.notePlaceholder, 'aria-label': COPY.noteLabel, 'data-testid': 'sb-note-text' }) as HTMLTextAreaElement;
+    ta.value = e.text;
+    const len = h('span', { class: 'len', 'data-testid': 'sb-note-len' }, COPY.noteLen([...e.text].length, NOTE_MAX));
+    ta.addEventListener('input', () => { hostApi.typed(ta.value); len.textContent = COPY.noteLen([...ta.value].length, NOTE_MAX); });
+    ta.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') { ev.preventDefault(); hostApi.cancelEdit(); }
+      else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); hostApi.saveEdit(); }
+    });
+    return h('div', { class: 'ed', 'data-testid': 'sb-note-editor', 'data-id': e.id === null ? '' : String(e.id) }, ta,
+      h('div', { class: 'ln' }, len,
+        h('button', { class: `${css.cmd} primary`, type: 'button', 'data-testid': 'sb-note-save', onclick: () => hostApi.saveEdit() }, COPY.saveNote),
+        h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-note-cancel', onclick: () => hostApi.cancelEdit() }, COPY.cancelNote)));
+  };
+  if (canChange) {
+    if (mine && mine.id === null) out.push(editor(mine));
+    else out.push(h('div', { class: 'nacts' }, h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-note-add', onclick: () => hostApi.editNote(key, null, '') }, COPY.addNote)));
+  }
+  if (!notes.length && !(mine && mine.id === null)) out.push(note(css, COPY.noNotes, 'sb-notes-empty'));
+  for (const n of notes) {
+    if (mine && mine.id === n.id) { out.push(editor(mine)); continue; }
+    out.push(h('div', { class: 'nt', 'data-testid': 'sb-note', 'data-id': String(n.id) },
+      h('div', { class: 'tx' }, n.text),
+      h('div', { class: 'mt' }, h('span', { class: 'when' }, COPY.noteWhen(n.time ? agoOf(n.time) : '', n.edited ? agoOf(n.edited) : '')),
+        canChange ? h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-note-edit', onclick: () => hostApi.editNote(key, n.id, n.text) }, COPY.editNote) : null,
+        canChange ? h('button', { class: `${css.cmd} danger`, type: 'button', 'data-testid': 'sb-note-delete', onclick: () => hostApi.deleteNote(key, n) }, COPY.deleteNote) : null)));
+  }
+  return out;
+}
+
+/** A contact's view: the head, [ VIEW PROFILE ] when viewable, then what you know and your notes. Exported for tests. @since 1.3.0 */
+export function renderContact(hostApi: PanelHost, view: Extract<SpacebookView, { kind: 'contact' }>): { bar: HTMLElement; note: HTMLElement | null; body: HTMLElement[] } {
+  const css = hostApi.css;
+  const cs = hostApi.contacts();
+  if (!cs) return { bar: viewBar(hostApi, view.name), note: null, body: [note(css, COPY.loading)] };
+  const cnote = cs.cached ? h('p', { class: 'note', 'data-testid': 'sb-cached' }, COPY.cached(agoOf(cs.cached))) : null;
+  if (cs.error) return { bar: viewBar(hostApi, view.name), note: cnote, body: [h('div', { class: 'reason', 'data-testid': 'sb-empty', role: 'status' }, h('span', { class: 'lbl' }, COPY.noSignal), h('span', { class: 'why', 'data-testid': 'sb-reason' }, cs.error))] };
+  const c = cs.contacts.find((x) => x.key === view.key);
+  if (!c) return { bar: viewBar(hostApi, view.name), note: cnote, body: [note(css, COPY.notContact, 'sb-error')] };
+  const name = c.known_as || c.name;
+  const head = cardRow(css, { ...c, name }, { testid: 'sb-contact-head' });
+  head.classList.add('head');
+  const body: HTMLElement[] = [head];
+  if (c.viewable) body.push(h('div', { class: 'acts' }, h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-view-profile', onclick: () => hostApi.openProfile({ key: c.key, name: c.name }) }, COPY.viewProfile)));
+  body.push(...renderIntel(hostApi, c.key, c.learned, c.notes, !cs.cached));
+  return { bar: viewBar(hostApi, name), note: cnote, body };
 }
 
 /** Public profiles matching a term. Exported for tests. */
@@ -380,6 +595,9 @@ export function renderResults(hostApi: PanelHost, view: Extract<SpacebookView, {
 /** How the extension hands a session's answers to one open panel. */
 interface PanelAnswer {
   profile(p: SpacebookProfile | SpacebookProfileError): void;
+  /** A `Spacebook.Contact`: refresh the learned details and notes of open profiles of that key. */
+  contact(c: SpacebookContact): void;
+  openContact(who: { key: string; name?: string }): void;
   results(r: { term: string; results: SpacebookCard[] }): void;
   open(who: { key?: string; name?: string }): void;
 }
@@ -427,6 +645,11 @@ export default defineExtension({
         run: (t) => { const b = buddyOf(t); if (b) api.openProfile({ key: b.key, name: b.name }, t.sid ?? undefined); },
       }),
       mu.menus.context({
+        id: 'notes', target: KIND as 'spacebook.buddy', order: 20, title: COPY.notes,
+        when: (t) => !!buddyOf(t),
+        run: (t) => { const b = buddyOf(t); if (b) api.openContact({ key: b.key, name: b.name }, t.sid ?? undefined); },
+      }),
+      mu.menus.context({
         id: 'remove', target: KIND as 'spacebook.buddy', order: 900, title: COPY.remove,
         when: (t) => !!buddyOf(t),
         run: async (t) => {
@@ -437,8 +660,16 @@ export default defineExtension({
       }),
     );
 
-    // Per-session state: the last list and the panels drawing it.
+    // Per-session state: the last list, the last contacts (with live Spacebook.Contact updates), and the panels drawing them.
     const lists = new Map<string, SpacebookList>();
+    const contactsBy = new Map<string, SpacebookContacts>();
+    /** A `Spacebook.Contact`: replace that contact in the held contacts by key (or add it when new), and hand it to open profiles. */
+    const upsertContact = (sid: string, c: SpacebookContact) => {
+      const cs = contactsBy.get(sid);
+      if (cs) { const i = cs.contacts.findIndex((x) => x.key === c.key); if (i >= 0) cs.contacts[i] = c; else cs.contacts.push(c); }
+      for (const a of panelAnswers.get(sid) ?? []) a.contact(c);
+      redraw(sid);
+    };
     const redraws = new Map<string, Set<() => void>>();
     const redraw = (sid: string) => { for (const fn of redraws.get(sid) ?? []) fn(); };
     /** The open panels of a session, to hand profile and search answers to. */
@@ -500,6 +731,8 @@ export default defineExtension({
       redeclare(null, RETRY.refreshGap);
       return (await mu.gmcp.send('Spacebook.Get', {}, sid)) === true;
     };
+    /** Ask for the contacts (1.3.0): on opening CONTACTS, on its REFRESH, and when a contact view finds none held. */
+    const askContacts = async (sid: string) => (await mu.gmcp.send('Spacebook.GetContacts', {}, sid)) === true;
 
     const mount = (hostEl: HTMLElement, pc: PanelMountCtx): Dispose => {
       const root = h('section', { class: 'mu-spacebook', 'aria-label': COPY.title, 'data-focus-region': ID, tabindex: '-1', 'data-testid': 'spacebook' });
@@ -507,6 +740,9 @@ export default defineExtension({
       const sid = pc.sid;
       let query = '';
       let targets: Dispose[] = [];
+      let mode: 'buddies' | 'contacts' = 'buddies';
+      /** The inline note editor (one at a time); closed by BACK, by switching views, and on save or cancel. */
+      let edit: NoteEdit | null = null;
       /** The views over the book, newest last; [ BACK ] pops one. */
       const views: Exclude<SpacebookView, { kind: 'book' }>[] = [];
       const push = (v: Exclude<SpacebookView, { kind: 'book' }>) => { views.push(v); if (views.length > 20) views.shift(); draw(); };
@@ -518,6 +754,11 @@ export default defineExtension({
           v.profile = p; v.key = p.key || v.key; if (p.name) v.name = p.name;
           if (views[views.length - 1] === v) draw();
         },
+        contact: (c) => {
+          for (const v of views) if (v.kind === 'profile' && v.profile && !('error' in v.profile) && v.profile.key === c.key) v.profile = { ...v.profile, learned: c.learned, notes: c.notes };
+          // The panel's own redraw follows (upsertContact redraws the session).
+        },
+        openContact: (who) => api.openContact({ key: who.key, name: who.name ?? '' }),
         results: (r) => {
           const v = [...views].reverse().find((x): x is Extract<SpacebookView, { kind: 'search' }> => x.kind === 'search' && x.term.toLowerCase() === r.term.toLowerCase());
           if (!v) return;
@@ -550,13 +791,14 @@ export default defineExtension({
           if (term?.trim()) { push({ kind: 'search', term: term.trim(), results: null }); send(sid, 'Spacebook.Search', { term: term.trim() }); }
         },
         setShareFriends: (on) => { if (sid) send(sid, 'Spacebook.SetShareFriends', { share: on }); },
-        refresh: () => { if (sid) void refreshNow(sid); },
+        refresh: () => { if (!sid) return; if (mode === 'contacts') { redeclare(null, RETRY.refreshGap); void askContacts(sid); } else void refreshNow(sid); },
         openProfile: (who) => {
           if (!sid || (!who.key && !who.name)) return;
+          edit = null;
           push({ kind: 'profile', key: who.key ?? '', name: who.name ?? '', profile: null });
           send(sid, 'Spacebook.GetProfile', who.key ? { key: who.key } : { name: who.name });
         },
-        back: () => { views.pop(); draw(); },
+        back: () => { views.pop(); edit = null; draw(); },
         addBuddy: (name) => { if (sid) send(sid, 'Spacebook.Add', { name }); },
         page: (name) => { mu.input.fill(COPY.cmdPage(name), { sid: sid ?? undefined }); mu.input.focus(sid ?? undefined); },
         target: (el, buddy) => (sid ? mu.menus.target(el, { kind: KIND, sid, data: { buddy } } as Parameters<Mu['menus']['target']>[1]) : () => {}),
@@ -564,23 +806,59 @@ export default defineExtension({
           const r = el.getBoundingClientRect();
           el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 12, clientY: r.top + 12 }));
         },
+        mode: () => mode,
+        setMode: (m) => { mode = m; if (m === 'contacts' && sid) void askContacts(sid); draw(); },
+        contacts: () => (sid ? contactsBy.get(sid) ?? null : null),
+        openContact: (who) => {
+          if (!sid || !who.key) return;
+          edit = null;
+          const held = contactsBy.get(sid);
+          if (!held || held.error || !held.contacts.some((c) => c.key === who.key)) void askContacts(sid);
+          push({ kind: 'contact', key: who.key, name: who.name || who.key });
+        },
+        editing: () => edit,
+        editNote: (key, id, text) => { edit = { key, id, text, was: text }; draw(); root.querySelector<HTMLTextAreaElement>('textarea[name=note]')?.focus(); },
+        typed: (text) => { if (edit) edit.text = text; },
+        cancelEdit: () => { edit = null; draw(); },
+        saveEdit: () => {
+          if (!edit || !sid) return;
+          const text = clampNote(edit.text);
+          if (!text) return;
+          const e = edit;
+          edit = null;
+          if (e.id === null) send(sid, 'Spacebook.AddNote', { key: e.key, text });
+          else if (text !== e.was) send(sid, 'Spacebook.EditNote', { key: e.key, id: e.id, text });
+          draw();
+        },
+        deleteNote: async (key, n) => {
+          if (!sid) return;
+          if (await mu.ui.confirm({ title: COPY.deleteTitle, body: n.text, confirm: COPY.deleteConfirm, danger: true })) send(sid, 'Spacebook.DeleteNote', { key, id: n.id });
+        },
       };
       const draw = () => {
         for (const d of targets) d();
         targets = [];
         const view = views[views.length - 1];
+        const top = root.querySelector('.scroll')?.scrollTop ?? 0;
         if (view) {
-          const out = view.kind === 'profile' ? renderProfile(api, view) : renderResults(api, view);
-          root.replaceChildren(out.bar, h('div', { class: 'scroll' }, ...out.body));
+          // A redraw under the note editor (a live update) keeps its focus and caret.
+          const ta = root.querySelector<HTMLTextAreaElement>('textarea[name=note]');
+          const focused = !!ta && ta.ownerDocument.activeElement === ta;
+          const caret = ta?.selectionStart ?? null;
+          const out = view.kind === 'profile' ? { ...renderProfile(api, view), note: null } : view.kind === 'contact' ? renderContact(api, view) : { ...renderResults(api, view), note: null };
+          const scroll = h('div', { class: 'scroll' }, ...out.body);
+          root.replaceChildren(out.bar, ...(out.note ? [out.note] : []), scroll);
+          scroll.scrollTop = top;
+          const nta = root.querySelector<HTMLTextAreaElement>('textarea[name=note]');
+          if (nta && focused) { nta.focus(); if (caret !== null) nta.setSelectionRange(caret, caret); }
           return;
         }
-        const top = root.querySelector('.scroll')?.scrollTop ?? 0;
         const out = renderPanel(api, query);
         targets = out.targets;
         const input = out.bar.querySelector<HTMLInputElement>('input[name=query]');
         input?.addEventListener('input', () => { query = input.value; drawBody(); });
         const scroll = h('div', { class: 'scroll' }, ...out.body);
-        root.replaceChildren(out.bar, ...(out.note ? [out.note] : []), scroll, ...(out.foot ? [out.foot] : []));
+        root.replaceChildren(out.modes, out.bar, ...(out.note ? [out.note] : []), scroll, ...(out.foot ? [out.foot] : []));
         scroll.scrollTop = top;
       };
       /** A keystroke in the search redraws the list only, so the field keeps focus and its caret. */
@@ -622,7 +900,7 @@ export default defineExtension({
       const off = mu.gmcp.watch(PKG, (data, m) => {
         const list = listOf(data);
         // A MUD reconnect clears the GMCP state: the list goes and the asking starts over.
-        if (!list) { if (data === undefined) { lists.delete(s.id); redraw(s.id); askFresh(s.id); } return; }
+        if (!list) { if (data === undefined) { lists.delete(s.id); contactsBy.delete(s.id); redraw(s.id); askFresh(s.id); } return; }
         lists.set(s.id, list);
         stopAsking(s.id);
         if (!touched) { touched = true; mu.panels.touch(ID, s.id); }
@@ -636,9 +914,12 @@ export default defineExtension({
       // Answers, not state: only fresh ones (a replayed profile belongs to an earlier panel).
       const offP = mu.gmcp.on('Spacebook.Profile', (data, m) => { const p = profileOf(data); if (p && !m.replay) for (const a of panelAnswers.get(s.id) ?? []) a.profile(p); }, { sid: s.id });
       const offR = mu.gmcp.on('Spacebook.Results', (data, m) => { const r = resultsOf(data); if (r && !m.replay) for (const a of panelAnswers.get(s.id) ?? []) a.results(r); }, { sid: s.id });
+      // Contacts (1.3.0): the whole set in answer to GetContacts, then one contact at a time (a note changed, a detail learned).
+      const offC = mu.gmcp.on('Spacebook.Contacts', (data) => { const cs = contactsOf(data); if (cs) { contactsBy.set(s.id, cs); redraw(s.id); } }, { sid: s.id });
+      const offC1 = mu.gmcp.on('Spacebook.Contact', (data, m) => { const c = contactOf(data); if (c && !m.replay) upsertContact(s.id, c); }, { sid: s.id });
       const a = mu.settings.watch(SETTINGS.online, () => redraw(s.id), { sid: s.id });
       const b = mu.settings.watch(SETTINGS.offline, () => redraw(s.id), { sid: s.id });
-      return () => { stopAsking(s.id); waits.delete(s.id); off(); offS(); offP(); offR(); a(); b(); lists.delete(s.id); redraws.delete(s.id); panelAnswers.delete(s.id); };
+      return () => { stopAsking(s.id); waits.delete(s.id); off(); offS(); offP(); offR(); offC(); offC1(); a(); b(); lists.delete(s.id); contactsBy.delete(s.id); redraws.delete(s.id); panelAnswers.delete(s.id); };
     }));
     // Deactivation: the `each` dispose above runs per session, and this clears any timer left should it not.
     ctx.subscriptions.push(() => { for (const sid of [...waits.keys()]) stopAsking(sid); waits.clear(); });
@@ -652,6 +933,14 @@ export default defineExtension({
         const open = [...(panelAnswers.get(s) ?? [])];
         if (open.length) open[0]!.open(who);
         else { mu.panels.open(ID, undefined, { sid: s }); queueMicrotask(() => [...(panelAnswers.get(s) ?? [])][0]?.open(who)); }
+      },
+      contacts: (sid) => { const s = sid ?? mu.sessions.active()?.id; const c = s ? contactsBy.get(s) : undefined; return c ? structuredClone(c) : null; },
+      openContact: (who, sid) => {
+        const s = sid ?? mu.sessions.active()?.id;
+        if (!s || !who?.key) return;
+        const open = [...(panelAnswers.get(s) ?? [])];
+        if (open.length) open[0]!.openContact(who);
+        else { mu.panels.open(ID, undefined, { sid: s }); queueMicrotask(() => [...(panelAnswers.get(s) ?? [])][0]?.openContact(who)); }
       },
     };
     return api;

@@ -62,6 +62,20 @@
     "introducer": {
       "type": "boolean",
       "$comment": "An NPC: its friends are the people it could introduce you to."
+    },
+    "learned": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/learned"
+      },
+      "$comment": "What the viewer learned about them; empty for yourself."
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/note"
+      },
+      "$comment": "The viewer's own notes on them; empty for yourself."
     }
   },
   "$defs": {
@@ -102,6 +116,63 @@
         "viewable": {
           "type": "boolean",
           "$comment": "The viewer may ask for this profile."
+        }
+      }
+    },
+    "learned": {
+      "type": "object",
+      "required": [
+        "field",
+        "value"
+      ],
+      "$comment": "A detail the viewer learned (today: what an NPC likes or loves).",
+      "properties": {
+        "field": {
+          "type": "string",
+          "$comment": "\"loves\" or \"likes\""
+        },
+        "label": {
+          "type": "string",
+          "$comment": "The field's display label (\"Loves\")."
+        },
+        "id": {
+          "type": "string",
+          "$comment": "The preference id."
+        },
+        "value": {
+          "type": "string",
+          "$comment": "The preference label (\"real-grain whisky\")."
+        },
+        "source": {
+          "type": "string",
+          "$comment": "told | gift | delivery"
+        },
+        "time": {
+          "type": "integer"
+        }
+      }
+    },
+    "note": {
+      "type": "object",
+      "required": [
+        "id",
+        "text"
+      ],
+      "$comment": "One of the viewer's private notes.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "$comment": "Unique per viewer, never reused."
+        },
+        "text": {
+          "type": "string"
+        },
+        "time": {
+          "type": "integer"
+        },
+        "edited": {
+          "type": "integer",
+          "$comment": "0 = never edited."
         }
       }
     }

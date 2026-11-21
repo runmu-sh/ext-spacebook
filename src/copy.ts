@@ -55,6 +55,37 @@ export const COPY = {
   isYou: 'You',
   privateProfile: 'Private profile',
   searchHead: (term: string) => `Search: ${term}`,
+  // contacts and notes (1.3.0)
+  modeBuddies: 'Buddies',
+  modeContacts: 'Contacts',
+  searchContacts: 'Search contacts',
+  contacts: 'Contacts',
+  noContacts: 'No contacts yet',
+  noContactMatch: 'No contact matches',
+  /** The small count on a contact row: "2 notes · 1 known". Empty when there is neither. */
+  tally: (notes: number, known: number) => [notes ? `${notes} note${notes === 1 ? '' : 's'}` : '', known ? `${known} known` : ''].filter(Boolean).join(' · '),
+  openContact: 'Open contact',
+  notContact: 'Not one of your contacts',
+  whatYouKnow: 'What you know',
+  knowNothing: 'Nothing learned yet',
+  /** The dim source after a learned value. */
+  source: { told: 'they told you', gift: 'from a gift', delivery: 'from a delivery' } as Record<string, string>,
+  yourNotes: 'Your notes',
+  noNotes: 'No notes yet',
+  addNote: 'Add note',
+  editNote: 'Edit',
+  deleteNote: 'Delete',
+  saveNote: 'Save',
+  cancelNote: 'Cancel',
+  notePlaceholder: 'a note only you can see',
+  noteLabel: 'Note',
+  /** The editor's length line: "12/200". */
+  noteLen: (n: number, max: number) => `${n}/${max}`,
+  /** When a note was written, and edited if it was. */
+  noteWhen: (written: string, edited: string) => (edited ? `${written} · edited ${edited}` : written),
+  deleteTitle: 'Delete this note?',
+  deleteConfirm: 'Delete',
+  notes: 'Notes',
   // prompts
   addTitle: 'Add a buddy',
   addLabel: 'Their name',

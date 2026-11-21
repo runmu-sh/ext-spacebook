@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -99,7 +99,8 @@ test('registration: panel right-bottom, order 40, singleton, show auto; the mani
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
   assert.deepEqual(pkg.muclient.contributes.panels, [{ id: 'spacebook', title: 'Spacebook', order: 40, defaultPosition: 'right-bottom', singleton: true }]);
   assert.equal(pkg.muclient.contributes.gmcp[0].package, 'Spacebook 1');
-  assert.deepEqual(Object.keys(pkg.muclient.contributes.gmcp[0].messages), ['Spacebook.List', 'Spacebook.Get', 'Spacebook.Accept', 'Spacebook.Add', 'Spacebook.Remove', 'Spacebook.SetBlurb', 'Spacebook.SetPublic', 'Spacebook.GetProfile', 'Spacebook.Profile', 'Spacebook.Search', 'Spacebook.Results', 'Spacebook.SetShareFriends']);
+  assert.deepEqual(Object.keys(pkg.muclient.contributes.gmcp[0].messages), ['Spacebook.List', 'Spacebook.Get', 'Spacebook.Accept', 'Spacebook.Add', 'Spacebook.Remove', 'Spacebook.SetBlurb', 'Spacebook.SetPublic', 'Spacebook.GetProfile', 'Spacebook.Profile', 'Spacebook.Search', 'Spacebook.Results', 'Spacebook.SetShareFriends', 'Spacebook.GetContacts', 'Spacebook.Contacts', 'Spacebook.Contact', 'Spacebook.AddNote', 'Spacebook.EditNote', 'Spacebook.DeleteNote']);
+  for (const [name, d] of Object.entries(pkg.muclient.contributes.gmcp[0].messages)) assert.ok(existsSync(join(ROOT, d.schema)), `${name}: ${d.schema}`);
   assert.deepEqual(pkg.muclient.activation, ['onGmcp:Spacebook']);
   assert.deepEqual(pkg.muclient.capabilities, ['send-commands']);
   assert.deepEqual(host.settingsSchema.items.map((i) => [i.key, i.default, i.scope, i.kind]), [['filter.online', true, 'world', 'toggle'], ['filter.offline', true, 'world', 'toggle']]);
@@ -319,10 +320,10 @@ test('context menu: the kind spacebook.buddy with a schema the rows pass; Page f
     assert.equal(validate(kinds.get(t.kind).schema, t.data), null);
   }
   assert.match(validate(kinds.get('spacebook.buddy').schema, { buddy: { name: 'x' } }), /key/);
-  assert.deepEqual(contexts.map((c) => [c.id, c.target, c.title]), [['page', 'spacebook.buddy', 'Page'], ['profile', 'spacebook.buddy', 'View profile'], ['remove', 'spacebook.buddy', 'Remove buddy']]);
+  assert.deepEqual(contexts.map((c) => [c.id, c.target, c.title, c.order]), [['page', 'spacebook.buddy', 'Page', 100], ['profile', 'spacebook.buddy', 'View profile', 10], ['notes', 'spacebook.buddy', 'Notes', 20], ['remove', 'spacebook.buddy', 'Remove buddy', 900]]);
   const ray = live().find((t) => t.t.data.buddy.name === 'Radical Ray').t;
   const pol = live().find((t) => t.t.data.buddy.name === 'Pol Castro').t;
-  const [page, , remove] = contexts;
+  const [page, , , remove] = contexts;
   assert.equal(page.when(ray), true);
   assert.equal(page.when(pol), false, 'no paging the dead');
   assert.equal(remove.when(pol), true);
@@ -484,7 +485,7 @@ test('profile: View profile (menu) sends GetProfile by key; LOADING, then the he
   assert.ok(p.q('[data-testid=sb-is-buddy]'));
   p.q('[data-testid=sb-page]').click();
   assert.deepEqual(fills.at(-1), ['page Yulia Kozlov ', 's1']);
-  assert.match(p.q('.sec-head').textContent, /^Friends \(2\)/);
+  assert.match(p.all('.sec-head').at(-1).textContent, /^Friends \(2\)/);
   const rows = p.all('[data-testid=sb-friend]');
   assert.deepEqual(rows.map((r) => r.querySelector('.name').textContent), ['Kaori Nagao', 'Duke']);
   assert.equal(rows[0].querySelector('[data-testid=sb-role]').textContent, 'librarian');
@@ -496,7 +497,7 @@ test('profile: View profile (menu) sends GetProfile by key; LOADING, then the he
   assert.deepEqual(gm().at(-1), ['Spacebook.GetProfile', { key: 'f1' }, 's1']);
   host.gmcp('s1', 'Spacebook.Profile', { ...NPC, key: 'f1' });
   assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Kaori Nagao');
-  assert.match(p.q('.sec-head').textContent, /^Can introduce you to$/);
+  assert.match(p.all('.sec-head').at(-1).textContent, /^Can introduce you to$/);
   assert.equal(p.q('[data-testid=sb-friends-hidden]').textContent, 'Kaori Nagao keeps their friends to themselves.');
   p.q('[data-testid=sb-add-buddy]').click();
   assert.deepEqual(gm().at(-1), ['Spacebook.Add', { name: 'Kaori Nagao' }, 's1']);
@@ -524,7 +525,7 @@ test('profile: an error answer reads the reason; an NPC that shares lists ┤CAN
   p.q('[data-testid=sb-back]').click();
   open({ key: 'n1', name: 'Kaori Nagao' });
   host.gmcp('s1', 'Spacebook.Profile', { ...NPC, shares_friends: true, friends_visible: true, friends_hidden: '', friends: [card('y', 'Yulia Kozlov', { role: 'fence', buddy: true, viewable: true })] });
-  assert.match(p.q('.sec-head').textContent, /^Can introduce you to \(1\)/);
+  assert.match(p.all('.sec-head').at(-1).textContent, /^Can introduce you to \(1\)/);
   assert.equal(p.q('[data-testid=sb-friend] [data-testid=sb-role]').textContent, 'fence');
   open({ key: 'n1' });
   host.gmcp('s1', 'Spacebook.Profile', { ...NPC, shares_friends: true, friends_visible: true, friends_hidden: '', friends: [] });
@@ -775,4 +776,377 @@ test('exports: cardOf, profileOf, resultsOf normalise; hidden friends are droppe
   assert.deepEqual(p.friends, [], 'friends_visible false: none, whatever was sent');
   assert.equal(p.introducer, true);
   assert.deepEqual(resultsOf({ term: ' t ', results: [{ key: 'a', name: 'A' }, { name: 'x' }] }).results.map((c) => c.key), ['a']);
+});
+
+// ─── 1.3.0: contacts, what you know, your notes ───
+
+const T0 = Math.floor(Date.now() / 1000);
+const learned = (field, value, source, o = {}) => ({ field, label: field === 'loves' ? 'Loves' : 'Likes', id: value.replace(/\W+/g, '_'), value, source, time: T0 - 3600, ...o });
+const noteRec = (id, text, o = {}) => ({ id, text, time: T0 - 600, edited: 0, ...o });
+const contact = (key, name, o = {}) => ({ ...card(key, name), known_as: name, learned: [], notes: [], ...o });
+/** As the contract has them (CONTRACT.md "GMCP"): buddies first, then people known by name. */
+const ROY = contact('29:#BR:roy', 'Royston Bigge', {
+  known_as: 'Big Roy', role: 'bartender', status: 'online', acquaintance: 'regular', viewable: false,
+  learned: [learned('loves', 'real-grain whisky', 'told'), learned('likes', 'a decent cup of coffee', 'gift'), learned('likes', 'a deck of holo-cards', 'delivery')],
+  notes: [noteRec(3, 'Owes me 40 cats.'), noteRec(7, 'Ask about the back room.', { edited: T0 - 60 })],
+});
+const CONTACTS = {
+  contacts: [
+    contact('b1', 'Yulia Kozlov', { status: 'offline', acquaintance: 'close friend', buddy: true, viewable: true, blurb: 'Night shift.', location: 'Cube 3148' }),
+    ROY,
+    contact('29:#KN:k', 'Kaori Nagao', { known_as: 'the librarian', role: 'librarian', status: 'online', notes: [noteRec(9, 'Quiet.')] }),
+  ],
+};
+const gmOf = (host) => () => host.sends('gmcp').map((s) => [s.pkg, s.data, s.sid]);
+const typeNote = (p, text) => { const t = p.q('[data-testid=sb-note-text]'); t.value = text; t.dispatchEvent(new win.Event('input', { bubbles: true })); return t; };
+
+test('1.3.0 schemas: contacts.json, contact.json and the note out schemas accept the contract shapes and refuse bad ids; profile.json takes learned and notes', async () => {
+  const schema = (f) => JSON.parse(readFileSync(join(ROOT, 'schema', f), 'utf8'));
+  assert.equal(validate(schema('contacts.json'), CONTACTS), null);
+  assert.equal(validate(schema('contacts.json'), { contacts: [], cached: T0 }), null);
+  assert.equal(validate(schema('contacts.json'), { contacts: [], error: 'No wristpad.' }), null);
+  assert.match(validate(schema('contacts.json'), {}), /contacts: required/);
+  assert.match(validate(schema('contacts.json'), { contacts: [{ name: 'no key' }] }), /key/);
+  assert.match(validate(schema('contacts.json'), { contacts: [{ ...ROY, notes: [{ id: '3', text: 'x' }] }] }), /id: expected integer/);
+  assert.equal(validate(schema('contact.json'), ROY), null);
+  assert.match(validate(schema('contact.json'), { ...ROY, learned: [{ field: 'likes' }] }), /value: required/);
+  assert.equal(validate(schema('addnote.json'), { key: 'k', text: 'hi' }), null);
+  assert.match(validate(schema('addnote.json'), { key: 'k' }), /text/);
+  assert.equal(validate(schema('editnote.json'), { key: 'k', id: 3, text: 'hi' }), null);
+  assert.match(validate(schema('editnote.json'), { key: 'k', id: 3.5, text: 'hi' }), /integer/);
+  assert.equal(validate(schema('deletenote.json'), { key: 'k', id: 3 }), null);
+  assert.match(validate(schema('deletenote.json'), { key: 'k' }), /id: required/);
+  assert.equal(validate(schema('profile.json'), { ...PROFILE, learned: ROY.learned, notes: ROY.notes }), null);
+  assert.match(validate(schema('profile.json'), { ...PROFILE, notes: [{ id: 1 }] }), /text: required/);
+});
+
+test('contacts: BUDDIES | CONTACTS tabs; CONTACTS sends GetContacts and reads LOADING, then ┤CONTACTS (3)├ rows by known_as in server order with a tally; filters and search shared; REFRESH asks again; no ADD, no foot; BUDDIES comes back', async () => {
+  const { host, mount } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  const gm = gmOf(host);
+  assert.equal(p.q('[data-testid=sb-mode-buddies]').getAttribute('aria-selected'), 'true');
+  assert.equal(p.q('[data-testid=sb-mode-contacts]').getAttribute('aria-selected'), 'false');
+  assert.equal(p.q('.modes').nextElementSibling.className, 'bar', 'the tabs sit over the bar');
+  p.q('[data-testid=sb-mode-contacts]').click();
+  assert.deepEqual(gm().at(-1), ['Spacebook.GetContacts', {}, 's1']);
+  assert.equal(p.q('[data-testid=sb-mode-contacts]').getAttribute('aria-selected'), 'true');
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'Loading');
+  assert.equal(p.q('[data-testid=sb-add]'), null);
+  assert.equal(p.q('[data-testid=sb-foot]'), null);
+  assert.equal(p.q('[data-testid=sb-search]').getAttribute('placeholder'), 'Search contacts');
+  host.gmcp('s1', 'Spacebook.Contacts', CONTACTS);
+  assert.match(p.all('.sec-head')[0].textContent, /^Contacts \(3\)/);
+  const rows = () => p.all('[data-testid=sb-contact]');
+  assert.deepEqual(rows().map((r) => r.querySelector('.name').textContent), ['Yulia Kozlov', 'Big Roy', 'the librarian'], 'known_as, buddies first (server order)');
+  assert.deepEqual(rows().map((r) => r.querySelector('[data-testid=sb-tally]')?.textContent ?? null), [null, '2 notes · 3 known', '1 note']);
+  assert.equal(rows()[1].querySelector('[data-testid=sb-role]').textContent, 'bartender');
+  p.q('[data-testid=sb-filter-offline]').click();
+  assert.deepEqual(rows().map((r) => r.querySelector('.name').textContent), ['Big Roy', 'the librarian'], 'the same ONLINE / OFFLINE settings');
+  p.q('[data-testid=sb-filter-offline]').click();
+  const i = p.q('[data-testid=sb-search]');
+  i.value = 'LIBRAR'; i.dispatchEvent(new win.Event('input', { bubbles: true }));
+  assert.deepEqual(rows().map((r) => r.querySelector('.name').textContent), ['the librarian']);
+  assert.equal(p.q('[data-testid=sb-search]'), i, 'a keystroke keeps the field');
+  i.value = 'roysTON'; i.dispatchEvent(new win.Event('input', { bubbles: true }));
+  assert.deepEqual(rows().map((r) => r.querySelector('.name').textContent), ['Big Roy'], 'the legal name matches too');
+  i.value = 'zzz'; i.dispatchEvent(new win.Event('input', { bubbles: true }));
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'No contact matches');
+  const n = gm().length;
+  p.q('[data-testid=sb-refresh]').click();
+  assert.deepEqual(gm().slice(n), [['Spacebook.GetContacts', {}, 's1']], 'REFRESH on CONTACTS asks for the contacts, not the list');
+  p.q('[data-testid=sb-mode-contacts]').click();
+  assert.equal(gm().length, n + 1, 'clicking the open tab asks nothing');
+  p.q('[data-testid=sb-mode-buddies]').click();
+  assert.equal(p.q('[data-testid=sb-search]').value, 'zzz', 'the search is shared');
+  i.value = ''; p.q('[data-testid=sb-search]').value = ''; p.q('[data-testid=sb-search]').dispatchEvent(new win.Event('input', { bubbles: true }));
+  assert.equal(p.all('[data-testid=sb-buddy]').length, 6);
+  assert.ok(p.q('[data-testid=sb-foot]'));
+  host.gmcp('s1', 'Spacebook.Contacts', { contacts: [] });
+  p.q('[data-testid=sb-mode-contacts]').click();
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'No contacts yet');
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+  assert.deepEqual(host.live(), []);
+});
+
+test('contacts: error reads NO SIGNAL over the reason; cached shows CACHED · <ago> and the contact view hides every note button (reads stay)', async () => {
+  const { host, mount } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  p.q('[data-testid=sb-mode-contacts]').click();
+  host.gmcp('s1', 'Spacebook.Contacts', { contacts: [], error: 'No wristpad.' });
+  assert.equal(p.q('[data-testid=sb-empty] .lbl').textContent, 'No signal');
+  assert.equal(p.q('[data-testid=sb-reason]').textContent, 'No wristpad.');
+  assert.deepEqual(p.all('[data-testid=sb-contact]'), []);
+  host.gmcp('s1', 'Spacebook.Contacts', { ...CONTACTS, cached: T0 - 12 * 60 });
+  assert.equal(p.q('[data-testid=sb-cached]').textContent, 'Cached · 12 min ago');
+  assert.equal(p.all('[data-testid=sb-contact]').length, 3);
+  p.all('[data-testid=sb-contact]')[1].click();
+  assert.equal(p.q('[data-testid=sb-cached]').textContent, 'Cached · 12 min ago', 'the view carries the note too');
+  assert.equal(p.all('[data-testid=sb-note]').length, 2, 'notes readable off-net');
+  assert.equal(p.all('[data-testid=sb-know-value]').length, 3);
+  assert.equal(p.q('[data-testid=sb-note-add]'), null);
+  assert.equal(p.q('[data-testid=sb-note-edit]'), null);
+  assert.equal(p.q('[data-testid=sb-note-delete]'), null);
+  host.gmcp('s1', 'Spacebook.Contacts', { contacts: [], error: 'Your wristpad has never synced.' });
+  assert.equal(p.q('[data-testid=sb-reason]').textContent, 'Your wristpad has never synced.', 'an open view reads the reason too');
+  assert.equal(p.q('[data-testid=sb-note-add]'), null);
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('contact view: head by known_as, no VIEW PROFILE unless viewable; ┤WHAT YOU KNOW├ grouped by label with the source; ┤YOUR NOTES (2)├ with when / edited; VIEW PROFILE on a viewable one opens it; BACK returns to the contacts', async () => {
+  const { host, mount } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  p.q('[data-testid=sb-mode-contacts]').click();
+  host.gmcp('s1', 'Spacebook.Contacts', CONTACTS);
+  const gm = gmOf(host);
+  const n = gm().length;
+  p.all('[data-testid=sb-contact]')[1].click();
+  assert.equal(gm().length, n, 'a held contact: nothing asked');
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Big Roy');
+  assert.equal(p.q('[data-testid=sb-contact-head] .name').textContent, 'Big Roy');
+  assert.equal(p.q('[data-testid=sb-contact-head] .l2').textContent, 'bartender·regular');
+  assert.ok(p.q('[data-testid=sb-contact-head]').classList.contains('head'));
+  assert.equal(p.q('[data-testid=sb-view-profile]'), null, 'not viewable: no VIEW PROFILE');
+  assert.equal(p.q('.modes'), null, 'the tabs belong to the lists');
+  assert.deepEqual(p.all('.sec-head').map((x) => x.textContent), ['What you know', 'Your notes (2)']);
+  assert.deepEqual(p.all('[data-testid=sb-know-field]').map((x) => x.textContent), ['Loves', 'Likes']);
+  const vals = p.all('[data-testid=sb-know] .vals').map((v) => [...v.querySelectorAll('[data-testid=sb-know-value]')].map((x) => x.firstChild.textContent));
+  assert.deepEqual(vals, [['real-grain whisky'], ['a decent cup of coffee', 'a deck of holo-cards']]);
+  assert.deepEqual(p.all('[data-testid=sb-know-source]').map((x) => x.textContent), ['they told you', 'from a gift', 'from a delivery']);
+  const notes = p.all('[data-testid=sb-note]');
+  assert.deepEqual(notes.map((x) => [x.getAttribute('data-id'), x.querySelector('.tx').textContent]), [['3', 'Owes me 40 cats.'], ['7', 'Ask about the back room.']]);
+  assert.equal(notes[0].querySelector('.when').textContent, '10 min ago');
+  assert.equal(notes[1].querySelector('.when').textContent, '10 min ago · edited 1 min ago');
+  assert.equal(p.q('[data-testid=sb-note-delete]').className, 'sh-cmd danger');
+  p.q('[data-testid=sb-back]').click();
+  assert.equal(p.all('[data-testid=sb-contact]').length, 3, 'back to CONTACTS');
+  p.all('[data-testid=sb-contact]')[0].click();
+  assert.equal(p.q('[data-testid=sb-know-empty]').textContent, 'Nothing learned yet');
+  assert.equal(p.q('[data-testid=sb-notes-empty]').textContent, 'No notes yet');
+  p.q('[data-testid=sb-view-profile]').click();
+  assert.deepEqual(gm().at(-1), ['Spacebook.GetProfile', { key: 'b1' }, 's1']);
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'Loading');
+  p.q('[data-testid=sb-back]').click();
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Yulia Kozlov');
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('notes: ADD NOTE opens the inline editor (one at a time); SAVE sends AddNote trimmed and clamped at 200; empty is not sent; CANCEL / Esc close; EDIT prefills, unchanged is not sent, changed sends EditNote {key,id,text}; Ctrl+Enter saves; DELETE confirms, then sends DeleteNote', async () => {
+  const { host, mount, prompts } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  p.q('[data-testid=sb-mode-contacts]').click();
+  host.gmcp('s1', 'Spacebook.Contacts', CONTACTS);
+  p.all('[data-testid=sb-contact]')[1].click();
+  const gm = gmOf(host);
+  const n0 = gm().length;
+  p.q('[data-testid=sb-note-add]').click();
+  assert.ok(p.q('[data-testid=sb-note-editor]'));
+  assert.equal(p.q('[data-testid=sb-note-add]'), null, 'the editor replaces ADD NOTE');
+  assert.equal(p.q('[data-testid=sb-note-text]').getAttribute('maxlength'), '200');
+  assert.equal(p.q('[data-testid=sb-note-text]').className, 'sh-field');
+  assert.equal(document.activeElement, p.q('[data-testid=sb-note-text]'), 'focused');
+  typeNote(p, '   ');
+  p.q('[data-testid=sb-note-save]').click();
+  assert.equal(gm().length, n0, 'empty: nothing sent, the editor stays');
+  assert.ok(p.q('[data-testid=sb-note-editor]'));
+  typeNote(p, '  ' + 'é'.repeat(230) + '  ');
+  assert.equal(p.q('[data-testid=sb-note-len]').textContent, '234/200');
+  p.q('[data-testid=sb-note-save]').click();
+  assert.deepEqual(gm().at(-1), ['Spacebook.AddNote', { key: '29:#BR:roy', text: 'é'.repeat(200) }, 's1']);
+  assert.equal(p.q('[data-testid=sb-note-editor]'), null, 'closed on save');
+  p.q('[data-testid=sb-note-add]').click();
+  p.q('[data-testid=sb-note-cancel]').click();
+  assert.equal(p.q('[data-testid=sb-note-editor]'), null);
+  p.q('[data-testid=sb-note-add]').click();
+  p.q('[data-testid=sb-note-text]').dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(p.q('[data-testid=sb-note-editor]'), null, 'Esc closes');
+  const n1 = gm().length;
+  p.all('[data-testid=sb-note-edit]')[1].click();
+  const ed = p.q('[data-testid=sb-note-editor]');
+  assert.equal(ed.getAttribute('data-id'), '7');
+  assert.equal(p.q('[data-testid=sb-note-text]').value, 'Ask about the back room.');
+  assert.deepEqual(p.all('[data-testid=sb-note]').map((x) => x.getAttribute('data-id')), ['3'], 'inline: the edited note gives way to the editor');
+  assert.ok(p.q('[data-testid=sb-note-add]'), 'ADD NOTE stays while editing another');
+  p.q('[data-testid=sb-note-save]').click();
+  assert.equal(gm().length, n1, 'unchanged: nothing sent');
+  p.all('[data-testid=sb-note-edit]')[0].click();
+  typeNote(p, ' Owes me 60 cats now. ');
+  p.q('[data-testid=sb-note-text]').dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+  assert.deepEqual(gm().at(-1), ['Spacebook.EditNote', { key: '29:#BR:roy', id: 3, text: 'Owes me 60 cats now.' }, 's1']);
+  host.confirmAnswer = false;
+  p.all('[data-testid=sb-note-delete]')[1].click();
+  await tick();
+  assert.deepEqual(prompts.at(-1), { title: 'Delete this note?', body: 'Ask about the back room.', confirm: 'Delete', danger: true });
+  assert.equal(gm().filter(([k]) => k === 'Spacebook.DeleteNote').length, 0, 'declined: nothing sent');
+  host.confirmAnswer = true;
+  p.all('[data-testid=sb-note-delete]')[1].click();
+  await tick();
+  assert.deepEqual(gm().at(-1), ['Spacebook.DeleteNote', { key: '29:#BR:roy', id: 7 }, 's1']);
+  assert.deepEqual(host.sends('command'), [], 'no text commands');
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('live: Spacebook.Contact replaces the contact by key in the list and the open view (an open editor survives), adds a new key, refreshes an open profile of that key; a replayed one is ignored; api.contacts is a copy', async () => {
+  const { host, mount, ext } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  p.q('[data-testid=sb-mode-contacts]').click();
+  host.gmcp('s1', 'Spacebook.Contacts', CONTACTS);
+  p.all('[data-testid=sb-contact]')[1].click();
+  p.q('[data-testid=sb-note-add]').click();
+  typeNote(p, 'half a thought');
+  host.gmcp('s1', 'Spacebook.Contact', { ...ROY, notes: [...ROY.notes, noteRec(11, 'Hates the cold.')], learned: [...ROY.learned, learned('likes', 'a cold beer', 'gift')] });
+  assert.match(p.all('.sec-head').at(-1).textContent, /^Your notes \(3\)/);
+  assert.deepEqual(p.all('[data-testid=sb-note] .tx').map((x) => x.textContent), ['Owes me 40 cats.', 'Ask about the back room.', 'Hates the cold.']);
+  assert.equal(p.all('[data-testid=sb-know-value]').length, 4);
+  assert.equal(p.q('[data-testid=sb-note-text]').value, 'half a thought', 'the editor and its text survive a live update');
+  assert.equal(document.activeElement, p.q('[data-testid=sb-note-text]'), 'and keep focus');
+  assert.equal(ext.api.contacts('s1').contacts[1].notes.length, 3, 'the held contacts are updated');
+  const copy = ext.api.contacts('s1'); copy.contacts.length = 0;
+  assert.equal(ext.api.contacts('s1').contacts.length, 3, 'a copy');
+  host.gmcp('s1', 'Spacebook.Contact', contact('29:#NEW:n', 'Newcomer', { learned: [learned('likes', 'tea', 'told')] }));
+  p.q('[data-testid=sb-note-cancel]').click();
+  p.q('[data-testid=sb-back]').click();
+  assert.deepEqual(p.all('[data-testid=sb-contact] .name').map((x) => x.textContent), ['Yulia Kozlov', 'Big Roy', 'the librarian', 'Newcomer'], 'a new key is added');
+  assert.equal(p.all('[data-testid=sb-contact]')[3].querySelector('[data-testid=sb-tally]').textContent, '1 known');
+  // An open profile of that key takes the new learned details and notes.
+  p.q('[data-testid=sb-mode-buddies]').click();
+  ext.api.openProfile({ key: 'b1', name: 'Yulia Kozlov' }, 's1');
+  host.gmcp('s1', 'Spacebook.Profile', { ...PROFILE, learned: [], notes: [] });
+  assert.equal(p.q('[data-testid=sb-notes-empty]').textContent, 'No notes yet');
+  host.gmcp('s1', 'Spacebook.Contact', { ...CONTACTS.contacts[0], notes: [noteRec(12, 'Call after 1800.')] });
+  assert.deepEqual(p.all('[data-testid=sb-note] .tx').map((x) => x.textContent), ['Call after 1800.']);
+  // Replay (the state of an earlier event) is not a change.
+  const late = createHost({ root: ROOT, sessions: [{ id: 's1', worldId: 'w1' }] });
+  fake(late);
+  late.gmcp('s1', 'Spacebook.Contact', ROY);
+  const lext = await late.load('src/index.ts');
+  assert.equal(lext.api.contacts('s1'), null, 'a replayed Contact adds nothing');
+  await late.unload();
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+  assert.deepEqual(host.live(), []);
+});
+
+test('buddy menu "Notes" opens the contact view: asks GetContacts when none are held (LOADING, then the contact), a key not among them reads NOT ONE OF YOUR CONTACTS; api.openContact does the same', async () => {
+  const { host, mount, contexts, targets, ext } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  const gm = gmOf(host);
+  const notes = contexts.find((c) => c.id === 'notes');
+  const yul = targets.find((t) => t.live && t.t.data.buddy.name === 'Yulia Kozlov').t;
+  assert.equal(notes.when(yul), true);
+  notes.run(yul);
+  assert.deepEqual(gm().at(-1), ['Spacebook.GetContacts', {}, 's1']);
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Yulia Kozlov');
+  assert.equal(p.q('[data-testid=sb-empty]').textContent, 'Loading');
+  host.gmcp('s1', 'Spacebook.Contacts', CONTACTS);
+  assert.equal(p.q('[data-testid=sb-contact-head] .name').textContent, 'Yulia Kozlov');
+  assert.ok(p.q('[data-testid=sb-view-profile]'), 'a buddy is viewable');
+  p.q('[data-testid=sb-back]').click();
+  const n = gm().length;
+  ext.api.openContact({ key: '29:#BR:roy' }, 's1');
+  assert.equal(gm().length, n, 'held: nothing asked');
+  assert.equal(p.q('[data-testid=sb-view-title]').textContent, 'Big Roy', 'the title comes from the contact');
+  p.q('[data-testid=sb-back]').click();
+  ext.api.openContact({ key: 'zz', name: 'Stranger' }, 's1');
+  assert.deepEqual(gm().at(-1), ['Spacebook.GetContacts', {}, 's1'], 'a key not held: ask again');
+  assert.equal(p.q('[data-testid=sb-error]').textContent, 'Not one of your contacts');
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('profile: a buddy\'s profile carries ┤WHAT YOU KNOW├ and ┤YOUR NOTES├ with the note buttons (AddNote by the profile key); not on your own profile; buttons hidden while the book is cached', async () => {
+  const { host, mount, ext } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  ext.api.openProfile({ key: 'b1' }, 's1');
+  host.gmcp('s1', 'Spacebook.Profile', { ...PROFILE, learned: [learned('likes', 'night markets', 'told')], notes: [noteRec(1, 'Met at the docks.')] });
+  assert.deepEqual(p.all('.sec-head').map((x) => x.textContent), ['What you know', 'Your notes (1)', 'Friends (2)']);
+  assert.equal(p.q('[data-testid=sb-know-source]').textContent, 'they told you');
+  p.q('[data-testid=sb-note-add]').click();
+  typeNote(p, 'Likes the night shift.');
+  p.q('[data-testid=sb-note-save]').click();
+  assert.deepEqual(host.sends('gmcp').at(-1).data, { key: 'b1', text: 'Likes the night shift.' });
+  assert.equal(host.sends('gmcp').at(-1).pkg, 'Spacebook.AddNote');
+  host.gmcp('s1', 'Spacebook.List', { ...LIST, cached: T0 - 60 });
+  assert.equal(p.q('[data-testid=sb-note-add]'), null, 'cached: no note buttons on the profile');
+  assert.equal(p.q('[data-testid=sb-note-edit]'), null);
+  assert.equal(p.all('[data-testid=sb-note]').length, 1);
+  ext.api.openProfile({ name: 'me' }, 's1');
+  host.gmcp('s1', 'Spacebook.Profile', { ...card('me', 'Nylys Gupta', { viewable: true }), shares_friends: true, friends_visible: true, friends_hidden: '', friends: [], introducer: false, learned: [], notes: [] });
+  assert.equal(p.q('[data-testid=sb-know-empty]'), null, 'not on your own profile');
+  assert.equal(p.q('[data-testid=sb-note-add]'), null);
+  // A 1.2-shaped profile (no learned/notes) still draws, with empty blocks.
+  ext.api.openProfile({ key: 'b2' }, 's1');
+  host.gmcp('s1', 'Spacebook.Profile', { ...PROFILE, key: 'b2', name: 'Radical Ray' });
+  assert.equal(p.q('[data-testid=sb-know-empty]').textContent, 'Nothing learned yet');
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+});
+
+test('timers: the contacts and notes paths leave no timer behind and dispose everything', async () => {
+  const before = timers();
+  const { host, mount } = await setupFast({ delays: [5000] });
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  p.q('[data-testid=sb-mode-contacts]').click();
+  host.gmcp('s1', 'Spacebook.Contacts', CONTACTS);
+  p.all('[data-testid=sb-contact]')[1].click();
+  p.q('[data-testid=sb-note-add]').click();
+  typeNote(p, 'x');
+  p.q('[data-testid=sb-note-save]').click();
+  host.gmcp('s1', 'Spacebook.Contact', ROY);
+  host.confirmAnswer = true;
+  p.q('[data-testid=sb-note-delete]').click();
+  await tick();
+  p.off();
+  await host.unload();
+  assert.deepEqual(host.live(), []);
+  await sleep(0);
+  assert.equal(timers(), before, 'no timer outlives the extension');
+});
+
+test('exports 1.3.0: contactOf, contactsOf, learnedOf, noteOf, groupLearned, filterContacts, clampNote, NOTE_MAX, COPY.tally / source', async () => {
+  const { contactOf, contactsOf, learnedOf, noteOf, groupLearned, filterContacts, clampNote, NOTE_MAX, COPY, profileOf } = await loadSource();
+  assert.equal(NOTE_MAX, 200);
+  assert.equal(contactOf({ name: 'x' }), null);
+  assert.deepEqual(contactOf({ key: 'k', known_as: ' Big Roy ' }), { key: 'k', name: 'Big Roy', role: '', status: 'unknown', portrait: 'placeholder', acquaintance: '', buddy: false, viewable: false, blurb: '', location: '', known_as: 'Big Roy', learned: [], notes: [] }, 'no name: the known_as stands in');
+  assert.equal(contactOf({ key: 'k', name: 'Legal' }).known_as, 'Legal', 'no known_as: the name');
+  assert.deepEqual(learnedOf({ field: 'likes', value: ' tea ', source: 'GIFT', time: 5.5 }), { field: 'likes', label: 'Likes', id: '', value: 'tea', source: 'gift', time: 5 });
+  assert.equal(learnedOf({ field: 'likes' }), null);
+  assert.equal(learnedOf({ value: 'x', source: 'rumour' }).source, '');
+  assert.deepEqual(noteOf({ id: 3, text: 'hi' }), { id: 3, text: 'hi', time: 0, edited: 0 });
+  assert.equal(noteOf({ id: '3', text: 'hi' }), null);
+  const c = contactsOf({ contacts: [ROY, { name: 'no key' }], cached: T0, error: ' ' });
+  assert.equal(c.contacts.length, 1);
+  assert.equal(c.cached, T0);
+  assert.equal('error' in c, false);
+  assert.equal(contactsOf('x'), null);
+  assert.deepEqual(contactsOf({}).contacts, []);
+  assert.deepEqual(groupLearned(contactOf(ROY).learned).map((g) => [g.label, g.items.length]), [['Loves', 1], ['Likes', 2]]);
+  const cs = CONTACTS.contacts.map(contactOf);
+  assert.deepEqual(filterContacts(cs, { online: true, offline: true, query: 'bartender' }).map((x) => x.key), ['29:#BR:roy']);
+  assert.deepEqual(filterContacts(cs, { online: false, offline: true, query: '' }).map((x) => x.key), ['b1']);
+  assert.equal(clampNote('  ' + 'a'.repeat(300)), 'a'.repeat(200));
+  assert.equal(COPY.tally(0, 0), '');
+  assert.equal(COPY.tally(1, 2), '1 note · 2 known');
+  assert.deepEqual(COPY.source, { told: 'they told you', gift: 'from a gift', delivery: 'from a delivery' });
+  const p = profileOf({ ...PROFILE, learned: [{ value: 'x' }, 'junk'], notes: [{ id: 1, text: 't' }, { text: 'no id' }] });
+  assert.equal(p.learned.length, 1);
+  assert.deepEqual(p.notes.map((n) => n.id), [1]);
 });

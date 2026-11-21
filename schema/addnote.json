@@ -1,0 +1,16 @@
+{
+  "$comment": "Spacebook.AddNote: a new note on a contact (at most 200 characters).",
+  "type": "object",
+  "required": [
+    "key",
+    "text"
+  ],
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    }
+  }
+}

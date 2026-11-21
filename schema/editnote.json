@@ -1,0 +1,20 @@
+{
+  "$comment": "Spacebook.EditNote: replace the text of note `id` on a contact.",
+  "type": "object",
+  "required": [
+    "key",
+    "id",
+    "text"
+  ],
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "id": {
+      "type": "integer"
+    },
+    "text": {
+      "type": "string"
+    }
+  }
+}

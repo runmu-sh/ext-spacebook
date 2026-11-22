@@ -1,7 +1,7 @@
 {
   "name": "@runmu.sh/ext-spacebook",
-  "version": "1.3.0",
-  "description": "The Spacebook panel for Torchship: your buddies and their status, location, acquaintance and blurb, pending buddy requests, your own profile, profile search, who your buddies (and the denizens you know) can introduce you to, and your contacts with what you have learned about them and your private notes, from GMCP Spacebook.",
+  "version": "1.4.0",
+  "description": "The Spacebook panel for Torchship: your buddies and their status, location, acquaintance and blurb, pending buddy requests, your own profile, profile search, who your buddies (and the denizens you know) can introduce you to, and your contacts with what you have learned about them, what lately changed how they feel about you, and your private notes, from GMCP Spacebook.",
   "keywords": [
     "spacebook",
     "torchship",

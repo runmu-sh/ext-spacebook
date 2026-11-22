@@ -70,6 +70,10 @@ var COPY = {
   openContact: "Open contact",
   notContact: "Not one of your contacts",
   whatYouKnow: "What you know",
+  // lately (1.4.0)
+  lately: "Lately",
+  /** The change line under a cause: the server's words (third person singular) after the name, as the live report reads. */
+  latelyEffect: (name, effect) => `${name} ${effect}.`,
   knowNothing: "Nothing learned yet",
   /** The dim source after a learned value. */
   source: { told: "they told you", gift: "from a gift", delivery: "from a delivery" },
@@ -215,6 +219,11 @@ ${R} .know .fl { font-size: .64rem; letter-spacing: .14em; text-transform: upper
 ${R} .know .vals { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 ${R} .know .val { color: var(--fg); overflow-wrap: anywhere; }
 ${R} .know .src { margin-left: 1ch; font-size: .7rem; color: var(--fg-faint); }
+${R} .lately { display: flex; flex-direction: column; gap: 4px; padding: 2px 0 6px 2.4ch; font-size: .8rem; }
+${R} .lately .lt { min-width: 0; }
+${R} .lately .cause { color: var(--fg); overflow-wrap: anywhere; }
+${R} .lately .eff { color: var(--accent, var(--fg)); overflow-wrap: anywhere; }
+${R} .lately .when { margin-left: 1ch; font-size: .7rem; color: var(--fg-faint); }
 ${R} .nacts { display: flex; gap: 6px; padding: 0 0 4px 2.4ch; }
 ${R} .nt { display: flex; flex-direction: column; gap: 3px; padding: 6px 0 6px 2.4ch; border-bottom: 1px solid var(--border); }
 ${R} .nt .tx { font-size: .8rem; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -259,6 +268,14 @@ function noteOf(v) {
   if (typeof d.id !== "number" || !Number.isInteger(d.id)) return null;
   return { id: d.id, text: str(d.text), time: intOf(d.time), edited: intOf(d.edited) };
 }
+function latelyOf(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const d = v;
+  const cause = str(d.cause).trim(), effect = str(d.effect).trim();
+  if (!cause || !effect) return null;
+  return { cause, effect, when: str(d.when).trim(), time: intOf(d.time) };
+}
+var latelyListOf = (v) => Array.isArray(v) ? v.map(latelyOf).filter((x) => !!x) : [];
 var learnedListOf = (v) => Array.isArray(v) ? v.map(learnedOf).filter((x) => !!x) : [];
 var notesOf = (v) => Array.isArray(v) ? v.map(noteOf).filter((x) => !!x) : [];
 function contactOf(v) {
@@ -267,7 +284,7 @@ function contactOf(v) {
   const known = str(d.known_as).trim();
   const c = cardOf(str(d.name).trim() ? d : { ...d, name: known });
   if (!c) return null;
-  return { ...c, known_as: known || c.name, learned: learnedListOf(d.learned), notes: notesOf(d.notes) };
+  return { ...c, known_as: known || c.name, learned: learnedListOf(d.learned), notes: notesOf(d.notes), lately: latelyListOf(d.lately) };
 }
 function contactsOf(data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
@@ -295,7 +312,7 @@ function profileOf(data) {
   const c = cardOf(d);
   if (!c) return null;
   const visible = d.friends_visible === true;
-  return { ...c, shares_friends: d.shares_friends === true, friends_visible: visible, friends_hidden: visible ? "" : str(d.friends_hidden).trim(), friends: visible ? cardsOf(d.friends) : [], introducer: d.introducer === true, learned: learnedListOf(d.learned), notes: notesOf(d.notes) };
+  return { ...c, shares_friends: d.shares_friends === true, friends_visible: visible, friends_hidden: visible ? "" : str(d.friends_hidden).trim(), friends: visible ? cardsOf(d.friends) : [], introducer: d.introducer === true, learned: learnedListOf(d.learned), notes: notesOf(d.notes), lately: latelyListOf(d.lately) };
 }
 function resultsOf(data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
@@ -484,7 +501,7 @@ function renderProfile(hostApi, view) {
   body.push(acts);
   if (!self) {
     const l = hostApi.list();
-    body.push(...renderIntel(hostApi, p.key, p.learned, p.notes, !!l && !l.error && !l.cached));
+    body.push(...renderLately(hostApi, p.lately, p.name), ...renderIntel(hostApi, p.key, p.learned, p.notes, !!l && !l.error && !l.cached));
   }
   const label = p.introducer ? COPY.introduces : COPY.friends;
   if (!p.friends_visible) {
@@ -573,6 +590,25 @@ function renderIntel(hostApi, key, learned, notes, canChange) {
   }
   return out;
 }
+function renderLately(hostApi, lately, name) {
+  if (!lately.length) return [];
+  const css = hostApi.css;
+  return [secHead(css, COPY.lately), h(
+    "div",
+    { class: "lately", "data-testid": "sb-lately" },
+    ...lately.map((e) => h(
+      "div",
+      { class: "lt", "data-testid": "sb-lately-row" },
+      h("div", { class: "cause", "data-testid": "sb-lately-cause" }, e.cause),
+      h(
+        "div",
+        null,
+        h("span", { class: "eff", "data-testid": "sb-lately-effect" }, COPY.latelyEffect(name, e.effect)),
+        e.when ? h("span", { class: "when", "data-testid": "sb-lately-when" }, e.when) : null
+      )
+    ))
+  )];
+}
 function renderContact(hostApi, view) {
   const css = hostApi.css;
   const cs = hostApi.contacts();
@@ -586,7 +622,7 @@ function renderContact(hostApi, view) {
   head.classList.add("head");
   const body = [head];
   if (c.viewable) body.push(h("div", { class: "acts" }, h("button", { class: css.cmd, type: "button", "data-testid": "sb-view-profile", onclick: () => hostApi.openProfile({ key: c.key, name: c.name }) }, COPY.viewProfile)));
-  body.push(...renderIntel(hostApi, c.key, c.learned, c.notes, !cs.cached));
+  body.push(...renderLately(hostApi, c.lately, name), ...renderIntel(hostApi, c.key, c.learned, c.notes, !cs.cached));
   return { bar: viewBar(hostApi, name), note: cnote, body };
 }
 function renderResults(hostApi, view) {
@@ -776,7 +812,7 @@ var index_default = defineExtension({
           if (views[views.length - 1] === v) draw();
         },
         contact: (c) => {
-          for (const v of views) if (v.kind === "profile" && v.profile && !("error" in v.profile) && v.profile.key === c.key) v.profile = { ...v.profile, learned: c.learned, notes: c.notes };
+          for (const v of views) if (v.kind === "profile" && v.profile && !("error" in v.profile) && v.profile.key === c.key) v.profile = { ...v.profile, learned: c.learned, notes: c.notes, lately: c.lately };
         },
         openContact: (who) => api2.openContact({ key: who.key, name: who.name ?? "" }),
         results: (r) => {
@@ -1110,6 +1146,7 @@ export {
   groupLearned,
   initialsOf,
   isHostile,
+  latelyOf,
   learnedOf,
   listOf,
   noteOf,
@@ -1117,6 +1154,7 @@ export {
   recordOf,
   renderContact,
   renderIntel,
+  renderLately,
   renderPanel,
   renderProfile,
   renderResults,

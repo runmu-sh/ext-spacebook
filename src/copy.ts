@@ -67,6 +67,10 @@ export const COPY = {
   openContact: 'Open contact',
   notContact: 'Not one of your contacts',
   whatYouKnow: 'What you know',
+  // lately (1.4.0)
+  lately: 'Lately',
+  /** The change line under a cause: the server's words (third person singular) after the name, as the live report reads. */
+  latelyEffect: (name: string, effect: string) => `${name} ${effect}.`,
   knowNothing: 'Nothing learned yet',
   /** The dim source after a learned value. */
   source: { told: 'they told you', gift: 'from a gift', delivery: 'from a delivery' } as Record<string, string>,

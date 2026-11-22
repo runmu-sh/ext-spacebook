@@ -1125,7 +1125,7 @@ test('exports 1.3.0: contactOf, contactsOf, learnedOf, noteOf, groupLearned, fil
   const { contactOf, contactsOf, learnedOf, noteOf, groupLearned, filterContacts, clampNote, NOTE_MAX, COPY, profileOf } = await loadSource();
   assert.equal(NOTE_MAX, 200);
   assert.equal(contactOf({ name: 'x' }), null);
-  assert.deepEqual(contactOf({ key: 'k', known_as: ' Big Roy ' }), { key: 'k', name: 'Big Roy', role: '', status: 'unknown', portrait: 'placeholder', acquaintance: '', buddy: false, viewable: false, blurb: '', location: '', known_as: 'Big Roy', learned: [], notes: [] }, 'no name: the known_as stands in');
+  assert.deepEqual(contactOf({ key: 'k', known_as: ' Big Roy ' }), { key: 'k', name: 'Big Roy', role: '', status: 'unknown', portrait: 'placeholder', acquaintance: '', buddy: false, viewable: false, blurb: '', location: '', known_as: 'Big Roy', learned: [], notes: [], lately: [] }, 'no name: the known_as stands in');
   assert.equal(contactOf({ key: 'k', name: 'Legal' }).known_as, 'Legal', 'no known_as: the name');
   assert.deepEqual(learnedOf({ field: 'likes', value: ' tea ', source: 'GIFT', time: 5.5 }), { field: 'likes', label: 'Likes', id: '', value: 'tea', source: 'gift', time: 5 });
   assert.equal(learnedOf({ field: 'likes' }), null);
@@ -1149,4 +1149,69 @@ test('exports 1.3.0: contactOf, contactsOf, learnedOf, noteOf, groupLearned, fil
   const p = profileOf({ ...PROFILE, learned: [{ value: 'x' }, 'junk'], notes: [{ id: 1, text: 't' }, { text: 'no id' }] });
   assert.equal(p.learned.length, 1);
   assert.deepEqual(p.notes.map((n) => n.id), [1]);
+});
+
+const LATE = [
+  { time: T0 - 30, when: 'just now', cause: 'A job you did: Parcel Run', effect: 'trusts you more and respects you slightly more' },
+  { time: T0 - 90000, when: 'yesterday', cause: 'A gift you gave them: a cold beer', effect: 'likes you a lot more' },
+];
+
+test('1.4.0 schemas: contact.json, contacts.json and profile.json take lately; a row needs cause and effect', async () => {
+  const schema = (f) => JSON.parse(readFileSync(join(ROOT, 'schema', f), 'utf8'));
+  assert.equal(validate(schema('contact.json'), { ...ROY, lately: LATE }), null);
+  assert.equal(validate(schema('contacts.json'), { contacts: [{ ...ROY, lately: LATE }] }), null);
+  assert.equal(validate(schema('profile.json'), { ...PROFILE, lately: LATE }), null);
+  assert.match(validate(schema('contact.json'), { ...ROY, lately: [{ cause: 'x' }] }), /effect: required/);
+  assert.match(validate(schema('profile.json'), { ...PROFILE, lately: [{ effect: 'x', time: 'soon' }] }), /cause: required|time: expected integer/);
+});
+
+test('lately: the contact view reads ┤LATELY├ above what you know — cause, "They <effect>.", when — newest first; none, no head; a live Contact refreshes it; a profile carries it, your own does not', async () => {
+  const { host, mount, ext } = await setup();
+  const p = mount();
+  host.gmcp('s1', 'Spacebook.List', LIST);
+  p.q('[data-testid=sb-mode-contacts]').click();
+  host.gmcp('s1', 'Spacebook.Contacts', { contacts: CONTACTS.contacts.map((c) => (c.key === ROY.key ? { ...c, lately: LATE } : c)) });
+  p.all('[data-testid=sb-contact]')[1].click();
+  assert.deepEqual(p.all('.sec-head').map((x) => x.textContent.replace(/ \(\d+\)$/, '')), ['Lately', 'What you know', 'Your notes']);
+  const rows = () => p.all('[data-testid=sb-lately-row]');
+  assert.deepEqual(rows().map((r) => r.querySelector('[data-testid=sb-lately-cause]').textContent), ['A job you did: Parcel Run', 'A gift you gave them: a cold beer']);
+  assert.deepEqual(rows().map((r) => r.querySelector('[data-testid=sb-lately-effect]').textContent), ['Big Roy trusts you more and respects you slightly more.', 'Big Roy likes you a lot more.'], 'by the name you know them as');
+  assert.deepEqual(rows().map((r) => r.querySelector('[data-testid=sb-lately-when]').textContent), ['just now', 'yesterday']);
+  assert.doesNotMatch(p.q('[data-testid=sb-lately]').textContent, /\d/, 'no numbers');
+  host.gmcp('s1', 'Spacebook.Contact', { ...ROY, lately: [{ time: T0, when: 'just now', cause: 'Your thanks', effect: 'likes you slightly more' }, ...LATE] });
+  assert.equal(rows().length, 3);
+  assert.equal(rows()[0].querySelector('[data-testid=sb-lately-cause]').textContent, 'Your thanks');
+  host.gmcp('s1', 'Spacebook.Contact', { ...ROY, lately: [] });
+  assert.equal(p.q('[data-testid=sb-lately]'), null, 'nothing lately: no block and no head');
+  assert.equal(p.all('.sec-head')[0].textContent, 'What you know');
+  p.q('[data-testid=sb-back]').click();
+  p.q('[data-testid=sb-mode-buddies]').click();
+  ext.api.openProfile({ key: 'b1' }, 's1');
+  host.gmcp('s1', 'Spacebook.Profile', { ...PROFILE, lately: [LATE[1]] });
+  assert.equal(p.all('[data-testid=sb-lately-row]').length, 1);
+  assert.equal(p.q('[data-testid=sb-lately-effect]').textContent, `${PROFILE.name} likes you a lot more.`);
+  assert.deepEqual(p.all('.sec-head').map((x) => x.textContent.replace(/ \(\d+\)$/, '')), ['Lately', 'What you know', 'Your notes', 'Friends']);
+  host.gmcp('s1', 'Spacebook.Contact', { ...CONTACTS.contacts[0], key: 'b1', lately: LATE });
+  assert.equal(p.all('[data-testid=sb-lately-row]').length, 2, 'a Contact of that key refreshes the open profile');
+  ext.api.openProfile({ name: 'me' }, 's1');
+  host.gmcp('s1', 'Spacebook.Profile', { ...card('me', 'Nylys Gupta', { viewable: true }), shares_friends: true, friends_visible: true, friends_hidden: '', friends: [], introducer: false, learned: [], notes: [], lately: LATE });
+  assert.equal(p.q('[data-testid=sb-lately]'), null, 'never on your own profile');
+  assert.equal(host.errors.length, 0);
+  p.off();
+  await host.unload();
+  assert.deepEqual(host.live(), []);
+});
+
+test('exports 1.4.0: latelyOf, renderLately, COPY.lately / latelyEffect; contactOf and profileOf carry lately', async () => {
+  const { latelyOf, contactOf, profileOf, COPY } = await loadSource();
+  assert.deepEqual(latelyOf({ cause: ' A favour ', effect: ' trusts you more ', when: ' today ', time: 7.9 }), { cause: 'A favour', effect: 'trusts you more', when: 'today', time: 7 });
+  assert.equal(latelyOf({ cause: 'x' }), null);
+  assert.equal(latelyOf({ effect: 'x' }), null);
+  assert.equal(latelyOf('junk'), null);
+  assert.deepEqual(latelyOf({ cause: 'c', effect: 'e' }), { cause: 'c', effect: 'e', when: '', time: 0 });
+  assert.deepEqual(contactOf({ ...ROY, lately: [...LATE, { cause: 'no effect' }] }).lately.map((e) => e.when), ['just now', 'yesterday']);
+  assert.deepEqual(contactOf(ROY).lately, [], 'a 1.3-shaped contact reads none');
+  assert.equal(profileOf({ ...PROFILE, lately: LATE }).lately.length, 2);
+  assert.equal(COPY.lately, 'Lately');
+  assert.equal(COPY.latelyEffect('Hansen', 'likes you more'), 'Hansen likes you more.');
 });

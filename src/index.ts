@@ -31,14 +31,17 @@
  * `DeleteNote`. `Spacebook.Contact` replaces one contact by key, live, in the list, the view and open profiles. A
  * buddy's profile shows the same two blocks. Every note button is hidden under `error` or `cached`.
  *
+ * Lately (1.4.0): a contact's view and anyone else's profile open with ┤LATELY├ when the payload's `lately` has rows:
+ * what most recently changed how they feel about you, in the game's words (cause, "<name> <effect>.", when), never a number.
+ *
  * Shown 'auto': the panel joins Views and adds itself the first time a session receives a list. Activation is
  * `onGmcp:Spacebook`, so on a game that never sends the package the extension stays dormant.
  */
 import { defineExtension, h, type Dispose, type JsonSchema, type Mu, type PanelMountCtx } from '@muclient/sdk';
 import { COPY } from './copy';
-import { BLURB_MAX, BUDDY_KIND, NOTE_MAX, SETTINGS, type SpacebookApi, type SpacebookCard, type SpacebookContact, type SpacebookContacts, type SpacebookLearned, type SpacebookList, type SpacebookNote, type SpacebookProfile, type SpacebookProfileError, type SpacebookRecord, type SpacebookStatus, type SpacebookView } from './types';
+import { BLURB_MAX, BUDDY_KIND, NOTE_MAX, SETTINGS, type SpacebookApi, type SpacebookCard, type SpacebookContact, type SpacebookContacts, type SpacebookLately, type SpacebookLearned, type SpacebookList, type SpacebookNote, type SpacebookProfile, type SpacebookProfileError, type SpacebookRecord, type SpacebookStatus, type SpacebookView } from './types';
 
-export type { SpacebookApi, SpacebookBuddyData, SpacebookCard, SpacebookContact, SpacebookContacts, SpacebookLearned, SpacebookLearnSource, SpacebookList, SpacebookNote, SpacebookProfile, SpacebookProfileError, SpacebookRecord, SpacebookResults, SpacebookSelf, SpacebookStatus, SpacebookView } from './types';
+export type { SpacebookApi, SpacebookBuddyData, SpacebookCard, SpacebookContact, SpacebookContacts, SpacebookLately, SpacebookLearned, SpacebookLearnSource, SpacebookList, SpacebookNote, SpacebookProfile, SpacebookProfileError, SpacebookRecord, SpacebookResults, SpacebookSelf, SpacebookStatus, SpacebookView } from './types';
 export { BLURB_MAX, BUDDY_KIND, NOTE_MAX, SETTINGS } from './types';
 export { COPY } from './copy';
 
@@ -151,6 +154,11 @@ ${R} .know .fl { font-size: .64rem; letter-spacing: .14em; text-transform: upper
 ${R} .know .vals { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 ${R} .know .val { color: var(--fg); overflow-wrap: anywhere; }
 ${R} .know .src { margin-left: 1ch; font-size: .7rem; color: var(--fg-faint); }
+${R} .lately { display: flex; flex-direction: column; gap: 4px; padding: 2px 0 6px 2.4ch; font-size: .8rem; }
+${R} .lately .lt { min-width: 0; }
+${R} .lately .cause { color: var(--fg); overflow-wrap: anywhere; }
+${R} .lately .eff { color: var(--accent, var(--fg)); overflow-wrap: anywhere; }
+${R} .lately .when { margin-left: 1ch; font-size: .7rem; color: var(--fg-faint); }
 ${R} .nacts { display: flex; gap: 6px; padding: 0 0 4px 2.4ch; }
 ${R} .nt { display: flex; flex-direction: column; gap: 3px; padding: 6px 0 6px 2.4ch; border-bottom: 1px solid var(--border); }
 ${R} .nt .tx { font-size: .8rem; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -208,6 +216,16 @@ export function noteOf(v: unknown): SpacebookNote | null {
   return { id: d.id, text: str(d.text), time: intOf(d.time), edited: intOf(d.edited) };
 }
 
+/** One lately change as the server sends it → a complete one. Null without a cause and an effect. Exported for tests. @since 1.4.0 */
+export function latelyOf(v: unknown): SpacebookLately | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const d = v as Record<string, unknown>;
+  const cause = str(d.cause).trim(), effect = str(d.effect).trim();
+  if (!cause || !effect) return null;
+  return { cause, effect, when: str(d.when).trim(), time: intOf(d.time) };
+}
+
+const latelyListOf = (v: unknown) => (Array.isArray(v) ? v.map(latelyOf).filter((x): x is SpacebookLately => !!x) : []);
 const learnedListOf = (v: unknown) => (Array.isArray(v) ? v.map(learnedOf).filter((x): x is SpacebookLearned => !!x) : []);
 const notesOf = (v: unknown) => (Array.isArray(v) ? v.map(noteOf).filter((x): x is SpacebookNote => !!x) : []);
 
@@ -218,7 +236,7 @@ export function contactOf(v: unknown): SpacebookContact | null {
   const known = str(d.known_as).trim();
   const c = cardOf(str(d.name).trim() ? d : { ...d, name: known });
   if (!c) return null;
-  return { ...c, known_as: known || c.name, learned: learnedListOf(d.learned), notes: notesOf(d.notes) };
+  return { ...c, known_as: known || c.name, learned: learnedListOf(d.learned), notes: notesOf(d.notes), lately: latelyListOf(d.lately) };
 }
 
 /** A `Spacebook.Contacts` payload → the contacts (with `error` / `cached` as in the list), or null. Exported for tests. @since 1.3.0 */
@@ -253,7 +271,7 @@ export function profileOf(data: unknown): SpacebookProfile | SpacebookProfileErr
   const c = cardOf(d);
   if (!c) return null;
   const visible = d.friends_visible === true;
-  return { ...c, shares_friends: d.shares_friends === true, friends_visible: visible, friends_hidden: visible ? '' : str(d.friends_hidden).trim(), friends: visible ? cardsOf(d.friends) : [], introducer: d.introducer === true, learned: learnedListOf(d.learned), notes: notesOf(d.notes) };
+  return { ...c, shares_friends: d.shares_friends === true, friends_visible: visible, friends_hidden: visible ? '' : str(d.friends_hidden).trim(), friends: visible ? cardsOf(d.friends) : [], introducer: d.introducer === true, learned: learnedListOf(d.learned), notes: notesOf(d.notes), lately: latelyListOf(d.lately) };
 }
 
 /** A `Spacebook.Results` payload → the term and its cards, or null. Exported for tests. */
@@ -503,7 +521,7 @@ export function renderProfile(hostApi: PanelHost, view: Extract<SpacebookView, {
   else acts.append(h('button', { class: `${css.cmd} primary`, type: 'button', 'data-testid': 'sb-add-buddy', onclick: () => hostApi.addBuddy(p.name) }, COPY.addBuddy));
   body.push(acts);
   // What you know and your notes (1.3.0), for anyone but yourself; changes only while the book is live.
-  if (!self) { const l = hostApi.list(); body.push(...renderIntel(hostApi, p.key, p.learned, p.notes, !!l && !l.error && !l.cached)); }
+  if (!self) { const l = hostApi.list(); body.push(...renderLately(hostApi, p.lately, p.name), ...renderIntel(hostApi, p.key, p.learned, p.notes, !!l && !l.error && !l.cached)); }
   const label = p.introducer ? COPY.introduces : COPY.friends;
   if (!p.friends_visible) { body.push(secHead(css, label), note(css, p.friends_hidden, 'sb-friends-hidden')); return { bar: viewBar(hostApi, p.name), body }; }
   body.push(secHead(css, label, p.friends.length));
@@ -563,6 +581,21 @@ export function renderIntel(hostApi: PanelHost, key: string, learned: SpacebookL
   return out;
 }
 
+/**
+ * ┤LATELY├: what most recently changed how they feel about you, newest first — the cause, then the change in
+ * words ("Hansen likes you a lot more."), then roughly when. Nothing at all when nothing has (a player, or an NPC you
+ * have not moved). Exported for tests. @since 1.4.0
+ */
+export function renderLately(hostApi: PanelHost, lately: SpacebookLately[], name: string): HTMLElement[] {
+  if (!lately.length) return [];
+  const css = hostApi.css;
+  return [secHead(css, COPY.lately), h('div', { class: 'lately', 'data-testid': 'sb-lately' },
+    ...lately.map((e) => h('div', { class: 'lt', 'data-testid': 'sb-lately-row' },
+      h('div', { class: 'cause', 'data-testid': 'sb-lately-cause' }, e.cause),
+      h('div', null, h('span', { class: 'eff', 'data-testid': 'sb-lately-effect' }, COPY.latelyEffect(name, e.effect)),
+        e.when ? h('span', { class: 'when', 'data-testid': 'sb-lately-when' }, e.when) : null))))];
+}
+
 /** A contact's view: the head, [ VIEW PROFILE ] when viewable, then what you know and your notes. Exported for tests. @since 1.3.0 */
 export function renderContact(hostApi: PanelHost, view: Extract<SpacebookView, { kind: 'contact' }>): { bar: HTMLElement; note: HTMLElement | null; body: HTMLElement[] } {
   const css = hostApi.css;
@@ -577,7 +610,7 @@ export function renderContact(hostApi: PanelHost, view: Extract<SpacebookView, {
   head.classList.add('head');
   const body: HTMLElement[] = [head];
   if (c.viewable) body.push(h('div', { class: 'acts' }, h('button', { class: css.cmd, type: 'button', 'data-testid': 'sb-view-profile', onclick: () => hostApi.openProfile({ key: c.key, name: c.name }) }, COPY.viewProfile)));
-  body.push(...renderIntel(hostApi, c.key, c.learned, c.notes, !cs.cached));
+  body.push(...renderLately(hostApi, c.lately, name), ...renderIntel(hostApi, c.key, c.learned, c.notes, !cs.cached));
   return { bar: viewBar(hostApi, name), note: cnote, body };
 }
 
@@ -755,7 +788,7 @@ export default defineExtension({
           if (views[views.length - 1] === v) draw();
         },
         contact: (c) => {
-          for (const v of views) if (v.kind === 'profile' && v.profile && !('error' in v.profile) && v.profile.key === c.key) v.profile = { ...v.profile, learned: c.learned, notes: c.notes };
+          for (const v of views) if (v.kind === 'profile' && v.profile && !('error' in v.profile) && v.profile.key === c.key) v.profile = { ...v.profile, learned: c.learned, notes: c.notes, lately: c.lately };
           // The panel's own redraw follows (upsertContact redraws the session).
         },
         openContact: (who) => api.openContact({ key: who.key, name: who.name ?? '' }),

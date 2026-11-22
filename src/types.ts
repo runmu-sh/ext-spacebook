@@ -84,6 +84,21 @@ export interface SpacebookNote {
 }
 
 /**
+ * One thing that lately changed how someone (an NPC) feels about the viewer, in words and never in numbers.
+ * Newest first in `lately`; the server keeps the last few. @since 1.4.0
+ */
+export interface SpacebookLately {
+  /** What did it, generically ("A job you did: Parcel Run", "A gift you gave them: a cold beer", "They heard that you killed someone"). */
+  cause: string;
+  /** The change, without a subject ("likes you a lot more and trusts you slightly less"). */
+  effect: string;
+  /** Roughly when, in the server's words ("just now", "yesterday", "this week"). */
+  when: string;
+  /** Unix seconds. */
+  time: number;
+}
+
+/**
  * Someone the viewer knows: a buddy, or anyone they know by name who is on Spacebook. `name` is what the viewer
  * knows them as (a buddy's legal name). One entry of `Spacebook.Contacts`, and the whole of `Spacebook.Contact`.
  * @since 1.3.0
@@ -92,6 +107,8 @@ export interface SpacebookContact extends SpacebookCard {
   known_as: string;
   learned: SpacebookLearned[];
   notes: SpacebookNote[];
+  /** What lately changed how they feel about the viewer; empty for a player. @since 1.4.0 */
+  lately: SpacebookLately[];
 }
 
 /** A normalised `Spacebook.Contacts`, the answer to `Spacebook.GetContacts`. `error` / `cached` as in the list. @since 1.3.0 */
@@ -114,6 +131,8 @@ export interface SpacebookProfile extends SpacebookCard {
   learned: SpacebookLearned[];
   /** The viewer's own notes on them; empty for yourself. @since 1.3.0 */
   notes: SpacebookNote[];
+  /** What lately changed how they feel about the viewer; empty for yourself or a player. @since 1.4.0 */
+  lately: SpacebookLately[];
 }
 
 /** `Spacebook.Profile` when the person cannot be found or their profile is private. */

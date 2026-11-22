@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+
+- **Lately.** A contact's view, and the profile of anyone but you, open with ┤LATELY├ when the game sends any: the last few things that changed how that person feels about you, newest first. Each row is the cause in generic words (*A job you did: Parcel Run*, *A gift you gave them: a fresh bottle of beer*, *They heard that you killed someone*), then the change in the game's own report wording under their name (*Hansen likes you a lot more.*), then roughly when (*just now*, *yesterday*). Never a number. The block and its head are left out when there is nothing. A live `Spacebook.Contact` refreshes it in the open view and any open profile of that key.
+- `Spacebook.Contacts` / `Spacebook.Contact` / `Spacebook.Profile` carry `lately: [{ cause, effect, when, time }]`; the three schemas know it (a row needs `cause` and `effect`). A 1.3-shaped payload reads as none.
+- Type `SpacebookLately`; `SpacebookContact.lately`, `SpacebookProfile.lately`; exports `latelyOf`, `renderLately`; `COPY.lately`, `COPY.latelyEffect(name, effect)`.
+
 ## 1.3.0
 
 - **Contacts.** `BUDDIES │ CONTACTS` tabs over the bar. CONTACTS sends `Spacebook.GetContacts {}` when opened and on its `[ REFRESH ]`, and lists `Spacebook.Contacts`: your buddies, then everyone you know by name who is on Spacebook, each under the name you know them by, with a `2 NOTES · 3 KNOWN` tally. The ONLINE / OFFLINE filters and the search are shared. `error` reads `NO SIGNAL` over the reason, `cached` shows `CACHED · <ago>`.

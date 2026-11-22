@@ -53,6 +53,13 @@
       "items": {
         "$ref": "#/$defs/note"
       }
+    },
+    "lately": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/lately"
+      },
+      "$comment": "What lately changed how they feel about the viewer, newest first; empty for yourself or a player. @since 1.4.0"
     }
   },
   "$defs": {
@@ -110,6 +117,31 @@
         "edited": {
           "type": "integer",
           "$comment": "0 = never edited."
+        }
+      }
+    },
+    "lately": {
+      "type": "object",
+      "required": [
+        "cause",
+        "effect"
+      ],
+      "$comment": "One thing that lately changed how they feel about the viewer: generic words, never numbers. @since 1.4.0",
+      "properties": {
+        "cause": {
+          "type": "string",
+          "$comment": "What did it, e.g. 'A job you did: Parcel Run'."
+        },
+        "effect": {
+          "type": "string",
+          "$comment": "The change without a subject, e.g. 'likes you a lot more'."
+        },
+        "when": {
+          "type": "string",
+          "$comment": "Roughly when, e.g. 'yesterday'."
+        },
+        "time": {
+          "type": "integer"
         }
       }
     }
